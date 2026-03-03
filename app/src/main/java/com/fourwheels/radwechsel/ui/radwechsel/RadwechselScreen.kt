@@ -100,10 +100,10 @@ fun RadwechselScreen(
                         }
                     } else if (pendingItems.isNotEmpty()) {
                         IconButton(onClick = { showQueue = !showQueue }) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = Red4Wheels
+                            Icon(
+                                Icons.Outlined.Sync,
+                                contentDescription = "Ausstehende Übertragungen",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                             )
                         }
                     }
@@ -153,7 +153,6 @@ fun RadwechselScreen(
                     state = state,
                     viewModel = viewModel,
                     wheelhotel = wheelhotel,
-                    pendingCount = pendingItems.size,
                     modifier = Modifier.padding(padding)
                 )
             }
@@ -384,7 +383,6 @@ private fun ErfolgScreen(
     state: RadwechselUiState,
     viewModel: RadwechselViewModel,
     wheelhotel: Wheelhotel?,
-    pendingCount: Int,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -432,26 +430,6 @@ private fun ErfolgScreen(
                 color = Color.Gray,
                 fontFamily = FontFamily.Monospace
             )
-        }
-
-        // Sync-Hinweis
-        if (pendingCount > 0) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF9C3)),
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color(0xFF92400E))
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        "$pendingCount Datensatz/Datensätze werden im Hintergrund synchronisiert.",
-                        fontSize = 13.sp,
-                        color = Color(0xFF92400E),
-                        lineHeight = 18.sp
-                    )
-                }
-            }
         }
 
         Spacer(Modifier.weight(1f))
@@ -554,7 +532,7 @@ private fun QueueItemCard(item: QueueItem, isFailed: Boolean, onRetry: () -> Uni
                     Icon(Icons.Outlined.Sync, contentDescription = "Erneut senden", tint = Red4Wheels)
                 }
             } else {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.Gray)
+                Icon(Icons.Outlined.CloudUpload, contentDescription = null, tint = Color.Gray, modifier = Modifier.padding(12.dp).size(20.dp))
             }
         }
     }
