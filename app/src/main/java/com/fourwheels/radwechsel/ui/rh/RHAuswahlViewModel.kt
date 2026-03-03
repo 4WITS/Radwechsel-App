@@ -16,7 +16,8 @@ import javax.inject.Inject
 data class RHAuswahlUiState(
     val wheelhotels: List<Wheelhotel> = emptyList(),
     val isLoading: Boolean = true,
-    val error: String? = null
+    val error: String? = null,
+    val sessionExpired: Boolean = false
 )
 
 @HiltViewModel
@@ -28,9 +29,8 @@ class RHAuswahlViewModel @Inject constructor(
     var uiState by mutableStateOf(RHAuswahlUiState())
         private set
 
-    // Queue-States direkt durchreichen für den Screen
     val pendingItems = queueManager.pendingItems
-    val failedItems = queueManager.failedItems
+    val failedItems  = queueManager.failedItems
 
     init { loadWheelhotels() }
 
@@ -39,16 +39,30 @@ class RHAuswahlViewModel @Inject constructor(
             uiState = uiState.copy(isLoading = true, error = null)
             when (val result = authRepository.getWheelhotels()) {
                 is AuthResult.Success -> uiState = uiState.copy(isLoading = false, wheelhotels = result.data)
-                is AuthResult.Error   -> uiState = uiState.copy(isLoading = false, error = result.message)
+                is AuthResult.Error   -> {
+                    if (result.message == "SESSION_EXPIRED") {
+                        authRepository.markSessionExpired()
+                        uiState = uiState.copy(isLoading = false, sessionExpired = true)
+                    } else {
+                        uiState = uiState.copy(isLoading = false, error = result.message)
+                    }
+                }
             }
         }
     }
 
     fun retry() = loadWheelhotels()
 
-    fun logout(onLoggedOut: () -> Unit) {
+    fun selectWheelhotel(hotel: Wheelhotel, onSelected: (Wheelhotel) -> Unit) {
         viewModelScope.launch {
-            authRepository.logout()
+            authRepository.saveLastWheelhotel(hotel)
+            onSelected(hotel)
+        }
+    }
+
+    fun logout(lockUsername: Boolean, onLoggedOut: () -> Unit) {
+        viewModelScope.launch {
+            authRepository.logout(lockUsername)
             onLoggedOut()
         }
     }

@@ -27,14 +27,20 @@ import com.fourwheels.radwechsel.ui.radwechsel.QueueManager
 fun RHAuswahlScreen(
     viewModel: RHAuswahlViewModel = hiltViewModel(),
     onWheelhotelSelected: (Wheelhotel) -> Unit,
-    onLoggedOut: () -> Unit
+    onLoggedOut: () -> Unit,
+    onSessionExpired: () -> Unit
 ) {
     val state = viewModel.uiState
     val pendingItems by viewModel.pendingItems.collectAsState()
-    val failedItems by viewModel.failedItems.collectAsState()
-    val hasOpenData = pendingItems.isNotEmpty() || failedItems.isNotEmpty()
+    val failedItems  by viewModel.failedItems.collectAsState()
+    val hasOpenData  = pendingItems.isNotEmpty() || failedItems.isNotEmpty()
 
     var showLogoutConfirm by remember { mutableStateOf(false) }
+
+    // Session abgelaufen → sofort weiterleiten
+    LaunchedEffect(state.sessionExpired) {
+        if (state.sessionExpired) onSessionExpired()
+    }
 
     if (showLogoutConfirm) {
         AlertDialog(
@@ -42,7 +48,10 @@ fun RHAuswahlScreen(
             title = { Text("Offene Daten") },
             text = { Text("Es gibt noch ${pendingItems.size + failedItems.size} nicht übertragene Radwechsel. Trotzdem ausloggen?") },
             confirmButton = {
-                TextButton(onClick = { showLogoutConfirm = false; viewModel.logout(onLoggedOut) }) {
+                TextButton(onClick = {
+                    showLogoutConfirm = false
+                    viewModel.logout(lockUsername = true, onLoggedOut)
+                }) {
                     Text("Ausloggen", color = MaterialTheme.colorScheme.error)
                 }
             },
@@ -59,7 +68,7 @@ fun RHAuswahlScreen(
                 actions = {
                     IconButton(onClick = {
                         if (hasOpenData) showLogoutConfirm = true
-                        else viewModel.logout(onLoggedOut)
+                        else viewModel.logout(lockUsername = false, onLoggedOut)
                     }) {
                         Icon(
                             Icons.AutoMirrored.Outlined.Logout,
@@ -97,7 +106,10 @@ fun RHAuswahlScreen(
                             Text("Deine Räderhotels", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 4.dp))
                         }
                         items(state.wheelhotels, key = { it.id }) { hotel ->
-                            WheelhotelItem(hotel = hotel, onClick = { onWheelhotelSelected(hotel) })
+                            WheelhotelItem(
+                                hotel = hotel,
+                                onClick = { viewModel.selectWheelhotel(hotel, onWheelhotelSelected) }
+                            )
                         }
                     }
                 }

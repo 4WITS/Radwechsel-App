@@ -7,18 +7,21 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -36,16 +39,39 @@ import com.fourwheels.radwechsel.ui.login.Red4Wheels
 @Composable
 fun RadwechselScreen(
     wheelhotel: Wheelhotel?,
-    onBack: () -> Unit,
+    username: String = "",
+    onLoggedOut: () -> Unit,
     viewModel: RadwechselViewModel = hiltViewModel()
 ) {
     LaunchedEffect(wheelhotel) { viewModel.wheelhotel = wheelhotel }
+    LaunchedEffect(username)   { viewModel.setUsername(username) }
 
     val state = viewModel.uiState
     val failedItems by viewModel.failedItems.collectAsState()
     val pendingItems by viewModel.pendingItems.collectAsState()
+    val hasOpenData = pendingItems.isNotEmpty() || failedItems.isNotEmpty()
 
     var showQueue by remember { mutableStateOf(false) }
+    var showLogoutConfirm by remember { mutableStateOf(false) }
+
+    if (showLogoutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showLogoutConfirm = false },
+            title = { Text("Offene Daten") },
+            text = { Text("Es gibt noch ${pendingItems.size + failedItems.size} nicht übertragene Radwechsel. Trotzdem ausloggen?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showLogoutConfirm = false
+                    viewModel.logout(lockUsername = true, onLoggedOut)
+                }) {
+                    Text("Ausloggen", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutConfirm = false }) { Text("Abbrechen") }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -54,27 +80,16 @@ fun RadwechselScreen(
                     Column {
                         Text("Radwechsel", fontWeight = FontWeight.Bold, fontSize = 17.sp)
                         Text(
-                            wheelhotel?.displayName ?: "",
+                            "RH: ${wheelhotel?.id ?: "–"}  ·  ${username.uppercase()}",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                     }
                 },
-                navigationIcon = {
-                    if (state.phase != RadwechselPhase.LAUFEND) {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.Outlined.ArrowBack, contentDescription = "Zurück")
-                        }
-                    }
-                },
                 actions = {
                     // Fehlgeschlagen-Badge
                     if (failedItems.isNotEmpty()) {
-                        BadgedBox(
-                            badge = {
-                                Badge { Text("${failedItems.size}") }
-                            }
-                        ) {
+                        BadgedBox(badge = { Badge { Text("${failedItems.size}") } }) {
                             IconButton(onClick = { showQueue = !showQueue }) {
                                 Icon(
                                     Icons.Outlined.Sync,
@@ -92,6 +107,20 @@ fun RadwechselScreen(
                             )
                         }
                     }
+                    // Logout-Button
+                    if (state.phase != RadwechselPhase.LAUFEND) {
+                        IconButton(onClick = {
+                            if (hasOpenData) showLogoutConfirm = true
+                            else viewModel.logout(lockUsername = false, onLoggedOut)
+                        }) {
+                            Icon(
+                                Icons.AutoMirrored.Outlined.Logout,
+                                contentDescription = "Ausloggen",
+                                tint = if (hasOpenData) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                                       else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
             )
@@ -99,7 +128,6 @@ fun RadwechselScreen(
     ) { padding ->
 
         if (showQueue) {
-            // ── Queue-Ansicht ───────────────────────────────────────────────
             QueueScreen(
                 failedItems = failedItems,
                 pendingItems = pendingItems,
@@ -142,6 +170,7 @@ private fun EingabeScreen(
     modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
+    var kennzeichenFocused by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -151,65 +180,42 @@ private fun EingabeScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Kennzeichen / Auftragsnummer
-        FieldCard(label = "KENNZEICHEN / AUFTRAGSNUMMER") {
-            OutlinedTextField(
+        InputCard(label = "KENNZEICHEN / AUFTRAGSNUMMER", isFocused = kennzeichenFocused) {
+            BasicTextField(
                 value = state.kennzeichen,
                 onValueChange = viewModel::onKennzeichenChange,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("z.B. MÜ-AB 123 oder 4W-00123", color = Color.Gray, fontFamily = FontFamily.Monospace) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { kennzeichenFocused = it.isFocused },
                 singleLine = true,
+                cursorBrush = SolidColor(Red4Wheels),
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Characters,
-                    imeAction = ImeAction.Next
+                    imeAction = ImeAction.Done
                 ),
                 keyboardActions = KeyboardActions(
-                    onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                ),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Red4Wheels,
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent
+                    onDone = { focusManager.clearFocus() }
                 ),
                 textStyle = LocalTextStyle.current.copy(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
-                    letterSpacing = 1.sp
-                )
-            )
-        }
-
-        // Drehmoment
-        FieldCard(label = "DREHMOMENT (NM)") {
-            OutlinedTextField(
-                value = state.torque,
-                onValueChange = viewModel::onTorqueChange,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("110", color = Color.Gray, fontFamily = FontFamily.Monospace) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number,
-                    imeAction = ImeAction.Done
+                    letterSpacing = 1.sp,
+                    color = MaterialTheme.colorScheme.onSurface
                 ),
-                keyboardActions = KeyboardActions(
-                    onDone = {
-                        focusManager.clearFocus()
-                        viewModel.startRadwechsel()
+                decorationBox = { innerTextField ->
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        if (state.kennzeichen.isEmpty()) {
+                            Text(
+                                "z.B. MÜ-AB 123",
+                                color = Color.Gray,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 18.sp
+                            )
+                        }
+                        innerTextField()
                     }
-                ),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Red4Wheels,
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent
-                ),
-                textStyle = LocalTextStyle.current.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
-                ),
-                suffix = { Text("Nm", color = Color.Gray) }
+                }
             )
         }
 
@@ -249,6 +255,9 @@ private fun LaufendScreen(
     wheelhotel: Wheelhotel?,
     modifier: Modifier = Modifier
 ) {
+    val focusManager = LocalFocusManager.current
+    var torqueFocused by remember { mutableStateOf(false) }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -278,35 +287,92 @@ private fun LaufendScreen(
             }
         }
 
-        InfoChip(label = "KENNZEICHEN / AUFTRAGSNUMMER", value = state.kennzeichen)
-        InfoChip(label = "DREHMOMENT", value = "${state.torque} Nm")
-        InfoChip(label = "STANDORT", value = wheelhotel?.displayName ?: "–")
+        InfoChip(label = "KENNZEICHEN / AUFTRAGSNUMMER", value = state.kennzeichen, stacked = true)
+        InfoChip(label = "STANDORT", value = wheelhotel?.id ?: "–")
+
+        // Drehmoment-Eingabe
+        InputCard(label = "DREHMOMENT (NM)", isFocused = torqueFocused) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                BasicTextField(
+                    value = state.torque,
+                    onValueChange = viewModel::onTorqueChange,
+                    modifier = Modifier
+                        .weight(1f)
+                        .onFocusChanged { torqueFocused = it.isFocused },
+                    singleLine = true,
+                    cursorBrush = SolidColor(Red4Wheels),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = { focusManager.clearFocus() }
+                    ),
+                    textStyle = LocalTextStyle.current.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    decorationBox = { innerTextField ->
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            if (state.torque.isEmpty()) {
+                                Text(
+                                    "110",
+                                    color = Color.Gray,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 18.sp
+                                )
+                            }
+                            innerTextField()
+                        }
+                    }
+                )
+                Text("Nm", color = Color.Gray, modifier = Modifier.padding(start = 8.dp))
+            }
+        }
+
+        if (state.error != null) {
+            Text(
+                text = state.error,
+                color = Red4Wheels,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+        }
 
         Spacer(Modifier.weight(1f))
 
-        // Abschließen
-        Button(
-            onClick = viewModel::abschliessen,
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A)),
-            shape = MaterialTheme.shapes.medium
+        // Buttons mit explizitem Abstand
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Icon(Icons.Outlined.CheckCircle, contentDescription = null, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Radwechsel abschließen", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        }
+            Button(
+                onClick = { focusManager.clearFocus(); viewModel.abschliessen() },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A)),
+                shape = MaterialTheme.shapes.medium
+            ) {
+                Icon(Icons.Outlined.CheckCircle, contentDescription = null, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Radwechsel abschließen", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
 
-        // Abbrechen
-        OutlinedButton(
-            onClick = viewModel::abbrechen,
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            shape = MaterialTheme.shapes.medium,
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Gray),
-            border = ButtonDefaults.outlinedButtonBorder
-        ) {
-            Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Abbrechen", fontSize = 15.sp)
+            OutlinedButton(
+                onClick = viewModel::abbrechen,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = MaterialTheme.shapes.medium,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Gray),
+                border = ButtonDefaults.outlinedButtonBorder
+            ) {
+                Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Abbrechen", fontSize = 15.sp)
+            }
         }
     }
 }
@@ -342,13 +408,31 @@ private fun ErfolgScreen(
 
         Text("Radwechsel erfasst!", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF111827))
 
-        Text(
-            "${state.kennzeichen} · ${viewModel.formatTimer(state.timerSeconds)} · ${state.torque} Nm",
-            fontSize = 14.sp,
-            color = Color.Gray,
-            textAlign = TextAlign.Center,
-            fontFamily = FontFamily.Monospace
-        )
+        // Drei Werte untereinander
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                state.kennzeichen,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                color = Color(0xFF374151)
+            )
+            Text(
+                viewModel.formatTimer(state.timerSeconds),
+                fontSize = 14.sp,
+                color = Color.Gray,
+                fontFamily = FontFamily.Monospace
+            )
+            Text(
+                "${state.torque} Nm",
+                fontSize = 14.sp,
+                color = Color.Gray,
+                fontFamily = FontFamily.Monospace
+            )
+        }
 
         // Sync-Hinweis
         if (pendingCount > 0) {
@@ -398,7 +482,6 @@ private fun QueueScreen(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        // Sub-Topbar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -420,21 +503,15 @@ private fun QueueScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Fehlgeschlagen
             if (failedItems.isNotEmpty()) {
                 item {
                     Text("FEHLGESCHLAGEN", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray, letterSpacing = 1.sp, modifier = Modifier.padding(vertical = 4.dp))
                 }
                 items(failedItems, key = { it.id }) { item ->
-                    QueueItemCard(
-                        item = item,
-                        isFailed = true,
-                        onRetry = { onRetryItem(item.id) }
-                    )
+                    QueueItemCard(item = item, isFailed = true, onRetry = { onRetryItem(item.id) })
                 }
             }
 
-            // Ausstehend
             if (pendingItems.isNotEmpty()) {
                 item {
                     Text("AUSSTEHEND", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray, letterSpacing = 1.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
@@ -464,10 +541,7 @@ private fun QueueItemCard(item: QueueItem, isFailed: Boolean, onRetry: () -> Uni
         ),
         shape = MaterialTheme.shapes.medium
     ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(item.licensePlate, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 15.sp)
                 Text("${item.wheelhotelName} · ${item.torque} Nm", fontSize = 12.sp, color = Color.Gray)
@@ -489,14 +563,22 @@ private fun QueueItemCard(item: QueueItem, isFailed: Boolean, onRetry: () -> Uni
 // ── Hilfs-Composables ────────────────────────────────────────────────────────
 
 @Composable
-private fun FieldCard(label: String, content: @Composable () -> Unit) {
+private fun InputCard(
+    label: String,
+    isFocused: Boolean,
+    content: @Composable () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .background(Color(0xFFF9FAFB))
-            .border(1.5.dp, Color(0xFFE5E7EB), MaterialTheme.shapes.medium)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .border(
+                width = 1.5.dp,
+                color = if (isFocused) Red4Wheels else Color(0xFFE5E7EB),
+                shape = MaterialTheme.shapes.medium
+            )
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6B7280), letterSpacing = 1.sp)
@@ -505,17 +587,26 @@ private fun FieldCard(label: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun InfoChip(label: String, value: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .background(Color(0xFFF3F4F6))
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, fontSize = 12.sp, color = Color(0xFF6B7280), fontWeight = FontWeight.Medium)
-        Text(value, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+private fun InfoChip(label: String, value: String, stacked: Boolean = false) {
+    val baseModifier = Modifier
+        .fillMaxWidth()
+        .clip(MaterialTheme.shapes.medium)
+        .background(Color(0xFFF3F4F6))
+        .padding(horizontal = 16.dp, vertical = 12.dp)
+
+    if (stacked) {
+        Column(modifier = baseModifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6B7280), letterSpacing = 1.sp)
+            Text(value, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        }
+    } else {
+        Row(
+            modifier = baseModifier,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, fontSize = 12.sp, color = Color(0xFF6B7280), fontWeight = FontWeight.Medium)
+            Text(value, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        }
     }
 }

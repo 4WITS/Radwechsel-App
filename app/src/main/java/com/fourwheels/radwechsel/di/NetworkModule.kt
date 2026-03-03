@@ -18,6 +18,8 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 import javax.inject.Named
 import javax.inject.Singleton
+import com.fourwheels.radwechsel.BuildConfig
+
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "auth")
 
@@ -25,10 +27,10 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    private const val AUTH_BASE_URL = "https://login-test.4wheels.de/"
-    private const val API_BASE_URL  = "https://api-test.4wheels.de/"
+    private const val AUTH_BASE_URL = BuildConfig.AUTH_BASE_URL
+    private const val API_BASE_URL  = BuildConfig.API_BASE_URL
 
-    const val CLIENT_ID = "iev2uogo6Viqueap"
+    private const val CLIENT_ID = BuildConfig.CLIENT_ID
     const val SCOPE     = "meta:read wheelhotel:read wheelhotel:write"
 
     @Provides

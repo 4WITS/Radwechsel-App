@@ -19,25 +19,25 @@ import androidx.compose.ui.text.input.*
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.fourwheels.radwechsel.model.Wheelhotel
 
 val Red4Wheels = Color(0xFFC8102E)
 
 @Composable
 fun LoginScreen(
     viewModel: LoginViewModel = hiltViewModel(),
-    onLoginSuccess: () -> Unit
+    onLoginSuccess: (Wheelhotel?, String) -> Unit
 ) {
     val state = viewModel.uiState
     val focusManager = LocalFocusManager.current
 
-    // Navigation nach erfolgreichem Login
     LaunchedEffect(state.loginSuccess) {
-        if (state.loginSuccess) onLoginSuccess()
+        if (state.loginSuccess) onLoginSuccess(state.lastWheelhotel, state.username)
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
 
-        // ── Logo-Block (rot, wie im Screenshot) ──────────────────────────────
+        // ── Logo-Block ────────────────────────────────────────────────────────
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -46,7 +46,6 @@ fun LoginScreen(
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                // Hier eigenes Logo-Composable einsetzen, sobald Assets vorhanden
                 Text(
                     text = "RADWECHSEL",
                     color = Color.White,
@@ -57,7 +56,7 @@ fun LoginScreen(
             }
         }
 
-        // ── Formular ─────────────────────────────────────────────────────────
+        // ── Formular ──────────────────────────────────────────────────────────
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -65,7 +64,7 @@ fun LoginScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
 
-            // Username
+            // Username (bei gesperrtem Account read-only)
             OutlinedTextField(
                 value = state.username,
                 onValueChange = viewModel::onUsernameChange,
@@ -73,6 +72,7 @@ fun LoginScreen(
                 label = { Text("Nutzername") },
                 leadingIcon = { Icon(Icons.Outlined.Person, contentDescription = null) },
                 singleLine = true,
+                enabled = !state.usernameIsLocked,
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.None,
                     imeAction = ImeAction.Next
@@ -98,10 +98,7 @@ fun LoginScreen(
                     imeAction = ImeAction.Done
                 ),
                 keyboardActions = KeyboardActions(
-                    onDone = {
-                        focusManager.clearFocus()
-                        viewModel.login()
-                    }
+                    onDone = { focusManager.clearFocus() }
                 ),
                 colors = outlinedTextFieldColors(),
                 isError = state.error != null
@@ -148,8 +145,8 @@ fun LoginScreen(
 
 @Composable
 private fun outlinedTextFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor   = Red4Wheels,
-    focusedLabelColor    = Red4Wheels,
+    focusedBorderColor      = Red4Wheels,
+    focusedLabelColor       = Red4Wheels,
     focusedLeadingIconColor = Red4Wheels,
-    cursorColor          = Red4Wheels
+    cursorColor             = Red4Wheels
 )

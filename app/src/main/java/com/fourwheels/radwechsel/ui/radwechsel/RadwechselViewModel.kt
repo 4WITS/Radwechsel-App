@@ -3,22 +3,23 @@ package com.fourwheels.radwechsel.ui.radwechsel
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fourwheels.radwechsel.model.Wheelhotel
+import com.fourwheels.radwechsel.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
+
+private val ISO_MS = DateTimeFormatter
+    .ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
+    .withZone(ZoneOffset.UTC)
 
 enum class RadwechselPhase { EINGABE, LAUFEND, ERFOLG }
 
@@ -26,6 +27,7 @@ data class RadwechselUiState(
     val phase: RadwechselPhase = RadwechselPhase.EINGABE,
     val kennzeichen: String = "",
     val torque: String = "110",
+    val username: String = "",
     val timerSeconds: Int = 0,
     val startedAt: String = "",
     val finishedAt: String = "",
@@ -34,8 +36,8 @@ data class RadwechselUiState(
 
 @HiltViewModel
 class RadwechselViewModel @Inject constructor(
-    private val queueManager: QueueManager,
-    private val dataStore: DataStore<Preferences>
+    private val authRepository: AuthRepository,
+    private val queueManager: QueueManager
 ) : ViewModel() {
 
     var uiState by mutableStateOf(RadwechselUiState())
@@ -47,14 +49,27 @@ class RadwechselViewModel @Inject constructor(
     var wheelhotel: Wheelhotel? = null
 
     val pendingItems = queueManager.pendingItems
-    val failedItems = queueManager.failedItems
+    val failedItems  = queueManager.failedItems
+
+    init {
+        viewModelScope.launch {
+            val savedUsername = authRepository.username.first() ?: ""
+            uiState = uiState.copy(username = savedUsername)
+        }
+    }
+
+    fun setUsername(u: String) {
+        if (u.isNotEmpty()) uiState = uiState.copy(username = u)
+    }
 
     fun onKennzeichenChange(v: String) {
-        uiState = uiState.copy(kennzeichen = v.uppercase(), error = null)
+        if (v.length <= 20) {
+            uiState = uiState.copy(kennzeichen = v.uppercase(), error = null)
+        }
     }
 
     fun onTorqueChange(v: String) {
-        if (v.all { it.isDigit() } && v.length <= 4) {
+        if (v.all { it.isDigit() } && v.length <= 5) {
             uiState = uiState.copy(torque = v, error = null)
         }
     }
@@ -64,16 +79,11 @@ class RadwechselViewModel @Inject constructor(
             uiState = uiState.copy(error = "Bitte Kennzeichen / Auftragsnummer eingeben")
             return
         }
-        val torqueInt = uiState.torque.toIntOrNull()
-        if (torqueInt == null || torqueInt < 50 || torqueInt > 500) {
-            uiState = uiState.copy(error = "Drehmoment muss zwischen 50 und 500 Nm liegen")
-            return
-        }
 
         startInstant = Instant.now()
         uiState = uiState.copy(
             phase = RadwechselPhase.LAUFEND,
-            startedAt = DateTimeFormatter.ISO_INSTANT.format(startInstant),
+            startedAt = ISO_MS.format(startInstant),
             timerSeconds = 0,
             error = null
         )
@@ -88,24 +98,26 @@ class RadwechselViewModel @Inject constructor(
 
     fun abbrechen() {
         timerJob?.cancel()
-        uiState = RadwechselUiState()
+        uiState = RadwechselUiState(username = uiState.username)
     }
 
     fun abschliessen() {
+        val torqueInt = uiState.torque.toIntOrNull()
+        if (torqueInt == null || torqueInt < 50 || torqueInt > 500) {
+            uiState = uiState.copy(error = "Drehmoment muss zwischen 50 und 500 Nm liegen")
+            return
+        }
+
         timerJob?.cancel()
-        val finishedAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
-        uiState = uiState.copy(phase = RadwechselPhase.ERFOLG, finishedAt = finishedAt)
+        val finishedAt = ISO_MS.format(Instant.now())
+        uiState = uiState.copy(phase = RadwechselPhase.ERFOLG, finishedAt = finishedAt, error = null)
 
         viewModelScope.launch {
-            val username = dataStore.data
-                .map { it[stringPreferencesKey("username")] ?: "" }
-                .first()
-
             queueManager.enqueue(
                 QueueItem(
                     wheelhotelId   = wheelhotel?.id ?: "",
                     wheelhotelName = wheelhotel?.displayName ?: "",
-                    username       = username,
+                    username       = uiState.username,
                     licensePlate   = uiState.kennzeichen,
                     torque         = uiState.torque.toInt(),
                     startedAt      = uiState.startedAt,
@@ -116,7 +128,14 @@ class RadwechselViewModel @Inject constructor(
     }
 
     fun neuerWechsel() {
-        uiState = RadwechselUiState()
+        uiState = RadwechselUiState(username = uiState.username)
+    }
+
+    fun logout(lockUsername: Boolean, onLoggedOut: () -> Unit) {
+        viewModelScope.launch {
+            authRepository.logout(lockUsername)
+            onLoggedOut()
+        }
     }
 
     fun retryAll() = queueManager.retryFailed()

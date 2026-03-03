@@ -20,12 +20,20 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".test"
+            versionNameSuffix = "-test"
+            buildConfigField("String", "AUTH_BASE_URL", "\"https://login-test.4wheels.de/\"")
+            buildConfigField("String", "API_BASE_URL",  "\"https://api-test.4wheels.de/\"")
+            buildConfigField("String", "CLIENT_ID",     "\"iev2uogo6Viqueap\"")
+        }
         release {
+            buildConfigField("String", "AUTH_BASE_URL", "\"https://login.4wheels.de/\"")
+            buildConfigField("String", "API_BASE_URL",  "\"https://api.4wheels.de/\"")
+            buildConfigField("String", "CLIENT_ID",     "\"Xahceay4tahFee5j\"")
             isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
@@ -40,6 +48,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true  // ← neu
     }
 }
 

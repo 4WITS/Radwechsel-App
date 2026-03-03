@@ -9,6 +9,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.fourwheels.radwechsel.api.FourWheelsApi
 import com.fourwheels.radwechsel.model.WheelChangeRequest
+import com.fourwheels.radwechsel.model.WheelhotelRef
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -116,10 +117,10 @@ class QueueManager @Inject constructor(
                 val response = fourWheelsApi.postWheelChange(
                     bearer = "Bearer $token",
                     body = WheelChangeRequest(
-                        wheelhotel   = item.wheelhotelId,
+                        wheelhotel   = WheelhotelRef(item.wheelhotelId),
                         username     = item.username,
                         licensePlate = item.licensePlate,
-                        torque       = item.torque.toString(),
+                        torque       = item.torque,
                         startedAt    = item.startedAt,
                         finishedAt   = item.finishedAt
                     )
