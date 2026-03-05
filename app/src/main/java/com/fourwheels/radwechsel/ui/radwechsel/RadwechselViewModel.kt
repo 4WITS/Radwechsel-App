@@ -69,7 +69,7 @@ class RadwechselViewModel @Inject constructor(
     }
 
     fun onTorqueChange(v: String) {
-        if (v.all { it.isDigit() } && v.length <= 5) {
+        if (v.all { it.isDigit() } && v.length <= 3) {
             uiState = uiState.copy(torque = v, error = null)
         }
     }

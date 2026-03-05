@@ -290,48 +290,63 @@ private fun LaufendScreen(
         InfoChip(label = "STANDORT", value = wheelhotel?.id ?: "–")
 
         // Drehmoment-Eingabe
-        InputCard(label = "DREHMOMENT (NM)", isFocused = torqueFocused) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                BasicTextField(
-                    value = state.torque,
-                    onValueChange = viewModel::onTorqueChange,
-                    modifier = Modifier
-                        .weight(1f)
-                        .onFocusChanged { torqueFocused = it.isFocused },
-                    singleLine = true,
-                    cursorBrush = SolidColor(Red4Wheels),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = { focusManager.clearFocus() }
-                    ),
-                    textStyle = LocalTextStyle.current.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    decorationBox = { innerTextField ->
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            if (state.torque.isEmpty()) {
-                                Text(
-                                    "110",
-                                    color = Color.Gray,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 18.sp
-                                )
-                            }
-                            innerTextField()
-                        }
-                    }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.medium)
+                .background(Color(0xFFF9FAFB))
+                .border(
+                    width = 1.5.dp,
+                    color = if (torqueFocused) Red4Wheels else Color(0xFFE5E7EB),
+                    shape = MaterialTheme.shapes.medium
                 )
-                Text("Nm", color = Color.Gray, modifier = Modifier.padding(start = 8.dp))
-            }
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Drehmoment",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF6B7280),
+                letterSpacing = 1.sp,
+                modifier = Modifier.weight(1f)
+            )
+            BasicTextField(
+                value = state.torque,
+                onValueChange = viewModel::onTorqueChange,
+                modifier = Modifier.onFocusChanged { torqueFocused = it.isFocused },
+                singleLine = true,
+                cursorBrush = SolidColor(Red4Wheels),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = { focusManager.clearFocus() }
+                ),
+                textStyle = LocalTextStyle.current.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.End
+                ),
+                decorationBox = { innerTextField ->
+                    Box {
+                        if (state.torque.isEmpty()) {
+                            Text(
+                                "110",
+                                color = Color.Gray,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 18.sp
+                            )
+                        }
+                        innerTextField()
+                    }
+                }
+            )
+            Text("Nm", color = Color.Gray, modifier = Modifier.padding(start = 6.dp),
+                fontFamily = FontFamily.Monospace, fontSize = 18.sp)
         }
 
         if (state.error != null) {

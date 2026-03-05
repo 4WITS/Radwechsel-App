@@ -1,6 +1,8 @@
 package com.fourwheels.radwechsel.ui.radwechsel
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -50,6 +53,7 @@ class QueueManager @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val gson = Gson()
     private val prefs = context.getSharedPreferences("radwechsel_queue", Context.MODE_PRIVATE)
+    private val isProcessing = AtomicBoolean(false)
 
     private val _pendingItems = MutableStateFlow<List<QueueItem>>(emptyList())
     val pendingItems: StateFlow<List<QueueItem>> = _pendingItems.asStateFlow()
@@ -99,46 +103,65 @@ class QueueManager @Inject constructor(
         }
     }
 
+    private fun isOnline(): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val cap = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return cap.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
     private suspend fun processQueue() {
-        val pending = _pendingItems.value.toList()
-        if (pending.isEmpty()) return
-
-        val token = dataStore.data
-            .map { it[stringPreferencesKey("access_token")] }
-            .first()
-
-        if (token == null) {
-            Log.w("QueueManager", "Kein Token – Queue pausiert")
+        if (!isProcessing.compareAndSet(false, true)) {
+            Log.d("QueueManager", "Verarbeitung läuft noch – übersprungen")
             return
         }
+        try {
+            if (!isOnline()) {
+                Log.d("QueueManager", "Offline – Queue pausiert")
+                return
+            }
 
-        for (item in pending) {
-            try {
-                val response = fourWheelsApi.postWheelChange(
-                    bearer = "Bearer $token",
-                    body = WheelChangeRequest(
-                        wheelhotel   = WheelhotelRef(item.wheelhotelId),
-                        username     = item.username,
-                        licensePlate = item.licensePlate,
-                        torque       = item.torque,
-                        startedAt    = item.startedAt,
-                        finishedAt   = item.finishedAt
+            val pending = _pendingItems.value.toList()
+            if (pending.isEmpty()) return
+
+            val token = dataStore.data
+                .map { it[stringPreferencesKey("access_token")] }
+                .first()
+
+            if (token == null) {
+                Log.w("QueueManager", "Kein Token – Queue pausiert")
+                return
+            }
+
+            for (item in pending) {
+                try {
+                    val response = fourWheelsApi.postWheelChange(
+                        bearer = "Bearer $token",
+                        body = WheelChangeRequest(
+                            wheelhotel   = WheelhotelRef(item.wheelhotelId),
+                            username     = item.username,
+                            licensePlate = item.licensePlate,
+                            torque       = item.torque,
+                            startedAt    = item.startedAt,
+                            finishedAt   = item.finishedAt
+                        )
                     )
-                )
 
-                if (response.isSuccessful) {
-                    _pendingItems.value = _pendingItems.value.filter { it.id != item.id }
-                    Log.d("QueueManager", "✓ Übertragen: ${item.licensePlate}")
-                } else {
-                    val errorMsg = "HTTP ${response.code()}"
-                    Log.w("QueueManager", "✗ Fehlgeschlagen: ${item.licensePlate} – $errorMsg")
-                    markFailed(item, errorMsg)
+                    if (response.isSuccessful) {
+                        _pendingItems.value = _pendingItems.value.filter { it.id != item.id }
+                        Log.d("QueueManager", "✓ Übertragen: ${item.licensePlate}")
+                    } else {
+                        val errorMsg = "HTTP ${response.code()}"
+                        Log.w("QueueManager", "✗ Fehlgeschlagen: ${item.licensePlate} – $errorMsg")
+                        markFailed(item, errorMsg)
+                    }
+                } catch (e: Exception) {
+                    Log.w("QueueManager", "✗ Exception: ${item.licensePlate} – ${e.message}")
+                    // Netzwerkfehler → nicht als FAILED markieren, einfach nächsten Versuch abwarten
                 }
-            } catch (e: Exception) {
-                Log.w("QueueManager", "✗ Exception: ${item.licensePlate} – ${e.message}")
-                // Netzwerkfehler → nicht als FAILED markieren, einfach nächsten Versuch abwarten
             }
             saveToDisk()
+        } finally {
+            isProcessing.set(false)
         }
     }
 
