@@ -69,7 +69,7 @@ class RadwechselViewModel @Inject constructor(
     }
 
     fun onTorqueChange(v: String) {
-        if (v.all { it.isDigit() } && v.length <= 3) {
+        if (v.all { it.isDigit() } && v.length <= 4) {
             uiState = uiState.copy(torque = v, error = null)
         }
     }
@@ -103,8 +103,8 @@ class RadwechselViewModel @Inject constructor(
 
     fun abschliessen() {
         val torqueInt = uiState.torque.toIntOrNull()
-        if (torqueInt == null || torqueInt < 50 || torqueInt > 500) {
-            uiState = uiState.copy(error = "Drehmoment muss zwischen 50 und 500 Nm liegen")
+        if (torqueInt == null || torqueInt < 50 || torqueInt > 1500) {
+            uiState = uiState.copy(error = "Drehmoment muss zwischen 50 und 1500 Nm liegen")
             return
         }
 
