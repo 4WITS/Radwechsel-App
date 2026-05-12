@@ -44,7 +44,6 @@ fun RadwechselScreen(
     viewModel: RadwechselViewModel = hiltViewModel()
 ) {
     LaunchedEffect(wheelhotel) { viewModel.wheelhotel = wheelhotel }
-    LaunchedEffect(username)   { viewModel.setUsername(username) }
 
     val state = viewModel.uiState
     val failedItems by viewModel.failedItems.collectAsState()

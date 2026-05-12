@@ -10,7 +10,6 @@ import com.fourwheels.radwechsel.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneOffset
@@ -27,7 +26,6 @@ data class RadwechselUiState(
     val phase: RadwechselPhase = RadwechselPhase.EINGABE,
     val kennzeichen: String = "",
     val torque: String = "110",
-    val username: String = "",
     val timerSeconds: Int = 0,
     val startedAt: String = "",
     val finishedAt: String = "",
@@ -50,17 +48,6 @@ class RadwechselViewModel @Inject constructor(
 
     val pendingItems = queueManager.pendingItems
     val failedItems  = queueManager.failedItems
-
-    init {
-        viewModelScope.launch {
-            val savedUsername = authRepository.username.first() ?: ""
-            uiState = uiState.copy(username = savedUsername)
-        }
-    }
-
-    fun setUsername(u: String) {
-        if (u.isNotEmpty()) uiState = uiState.copy(username = u)
-    }
 
     fun onKennzeichenChange(v: String) {
         if (v.length <= 20) {
@@ -98,7 +85,7 @@ class RadwechselViewModel @Inject constructor(
 
     fun abbrechen() {
         timerJob?.cancel()
-        uiState = RadwechselUiState(username = uiState.username)
+        uiState = RadwechselUiState()
     }
 
     fun abschliessen() {
@@ -115,9 +102,7 @@ class RadwechselViewModel @Inject constructor(
         viewModelScope.launch {
             queueManager.enqueue(
                 QueueItem(
-                    wheelhotelId   = wheelhotel?.id ?: "",
                     wheelhotelName = wheelhotel?.displayName ?: "",
-                    username       = uiState.username,
                     licensePlate   = uiState.kennzeichen,
                     torque         = uiState.torque.toInt(),
                     startedAt      = uiState.startedAt,
@@ -128,7 +113,7 @@ class RadwechselViewModel @Inject constructor(
     }
 
     fun neuerWechsel() {
-        uiState = RadwechselUiState(username = uiState.username)
+        uiState = RadwechselUiState()
     }
 
     fun logout(lockUsername: Boolean, onLoggedOut: () -> Unit) {
