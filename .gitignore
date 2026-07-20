@@ -11,6 +11,11 @@ local.properties
 # Kotlin
 .kotlin/
 
+# Release-Signing – niemals versionieren, separat sichern!
+/keystore/
+*.jks
+*.keystore
+
 # Android Studio / IntelliJ – lokaler Maschinenzustand
 /.idea/caches
 /.idea/libraries

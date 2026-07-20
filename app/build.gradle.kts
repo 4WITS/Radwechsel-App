@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -6,9 +8,29 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// Signing-Zugangsdaten aus local.properties (nicht versioniert).
+// Fehlen sie, faellt der Release-Build auf den Debug-Key zurueck, statt zu brechen.
+val localProps = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+val releaseStoreFile = localProps.getProperty("RELEASE_STORE_FILE")
+    ?.let { rootProject.file(it) }
+    ?.takeIf { it.exists() }
+
 android {
     namespace = "com.fourwheels.radwechsel"
     compileSdk = 35
+
+    signingConfigs {
+        if (releaseStoreFile != null) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = localProps.getProperty("RELEASE_STORE_PASSWORD")
+                keyAlias = localProps.getProperty("RELEASE_KEY_ALIAS")
+                keyPassword = localProps.getProperty("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.fourwheels.radwechsel"
@@ -33,7 +55,7 @@ android {
             buildConfigField("String", "CLIENT_ID",     "\"Xahceay4tahFee5j\"")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 
