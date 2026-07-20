@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -77,23 +78,27 @@ fun RadwechselScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Radwechsel", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                        Text("Radwechsel", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Color.White)
                         Text(
                             "RH: ${wheelhotel?.id ?: "–"}  ·  ${username.uppercase()}",
                             fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            color = Color.White.copy(alpha = 0.75f)
                         )
                     }
                 },
                 actions = {
                     // Fehlgeschlagen-Badge
                     if (failedItems.isNotEmpty()) {
-                        BadgedBox(badge = { Badge { Text("${failedItems.size}") } }) {
+                        BadgedBox(badge = {
+                            Badge(containerColor = Color.White, contentColor = Red4Wheels) {
+                                Text("${failedItems.size}")
+                            }
+                        }) {
                             IconButton(onClick = { showQueue = !showQueue }) {
                                 Icon(
                                     Icons.Outlined.Sync,
                                     contentDescription = "Fehlgeschlagene Übertragungen",
-                                    tint = MaterialTheme.colorScheme.error
+                                    tint = Color.White
                                 )
                             }
                         }
@@ -102,7 +107,7 @@ fun RadwechselScreen(
                             Icon(
                                 Icons.Outlined.Sync,
                                 contentDescription = "Ausstehende Übertragungen",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                tint = Color.White.copy(alpha = 0.6f)
                             )
                         }
                     }
@@ -115,13 +120,12 @@ fun RadwechselScreen(
                             Icon(
                                 Icons.AutoMirrored.Outlined.Logout,
                                 contentDescription = "Ausloggen",
-                                tint = if (hasOpenData) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                                       else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                tint = if (hasOpenData) Color.White.copy(alpha = 0.35f) else Color.White
                             )
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Red4Wheels)
             )
         }
     ) { padding ->
@@ -380,7 +384,7 @@ private fun LaufendScreen(
                 modifier = Modifier.fillMaxWidth().height(48.dp),
                 shape = MaterialTheme.shapes.medium,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Gray),
-                border = ButtonDefaults.outlinedButtonBorder
+                border = ButtonDefaults.outlinedButtonBorder(enabled = true)
             ) {
                 Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
@@ -481,7 +485,7 @@ private fun QueueScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onClose) {
-                Icon(Icons.Outlined.ArrowBack, contentDescription = "Zurück")
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Zurück")
             }
             Text("Übertragungen", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
             if (failedItems.isNotEmpty()) {
