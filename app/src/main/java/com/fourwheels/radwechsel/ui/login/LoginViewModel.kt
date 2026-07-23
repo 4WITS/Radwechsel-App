@@ -9,7 +9,6 @@ import com.fourwheels.radwechsel.model.Wheelhotel
 import com.fourwheels.radwechsel.repository.AuthRepository
 import com.fourwheels.radwechsel.repository.AuthResult
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -32,11 +31,10 @@ class LoginViewModel @Inject constructor(
         private set
 
     init {
-        viewModelScope.launch {
-            val locked   = authRepository.isUsernameLocked.first()
-            val username = if (locked) authRepository.username.first() ?: "" else ""
-            uiState = uiState.copy(username = username, usernameIsLocked = locked)
-        }
+        // TokenStore liest synchron -> kein Coroutine nötig.
+        val locked   = authRepository.isUsernameLocked
+        val username = if (locked) authRepository.username ?: "" else ""
+        uiState = uiState.copy(username = username, usernameIsLocked = locked)
     }
 
     fun onUsernameChange(value: String) {

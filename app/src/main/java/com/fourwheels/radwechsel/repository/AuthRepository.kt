@@ -1,17 +1,9 @@
 package com.fourwheels.radwechsel.repository
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.longPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
 import com.fourwheels.radwechsel.api.AuthApi
 import com.fourwheels.radwechsel.api.FourWheelsApi
+import com.fourwheels.radwechsel.auth.TokenStore
 import com.fourwheels.radwechsel.model.Wheelhotel
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
@@ -24,65 +16,48 @@ sealed class AuthResult<out T> {
 }
 
 // ─── Repository ──────────────────────────────────────────────────────────────
+//
+// Token-Handling liegt jetzt im synchronen, verschlüsselten TokenStore.
+// Bearer-Header + automatischer 401-Refresh passieren transparent im
+// OkHttp-Layer (AuthInterceptor + TokenAuthenticator) – das Repository muss
+// den Token nicht mehr selbst anhängen.
 
 @Singleton
 class AuthRepository @Inject constructor(
     private val authApi: AuthApi,
     private val fourWheelsApi: FourWheelsApi,
-    private val dataStore: DataStore<Preferences>,
+    private val tokenStore: TokenStore,
     @Named("clientId") private val clientId: String,
     @Named("scope")    private val scope: String
 ) {
 
-    companion object {
-        private val KEY_ACCESS_TOKEN   = stringPreferencesKey("access_token")
-        private val KEY_REFRESH_TOKEN  = stringPreferencesKey("refresh_token")
-        private val KEY_USERNAME       = stringPreferencesKey("username")
-        private val KEY_TOKEN_EXPIRY   = longPreferencesKey("token_expiry")
-        private val KEY_LAST_WH_ID     = stringPreferencesKey("last_wh_id")
-        private val KEY_LAST_WH_NAME   = stringPreferencesKey("last_wh_name")
-        private val KEY_USERNAME_LOCKED = booleanPreferencesKey("username_locked")
-    }
+    // ─── Zustand (synchron aus dem verschlüsselten Store) ─────────────────────
 
-    // ─── Token / User lesen ──────────────────────────────────────────────────
+    val username: String?         get() = tokenStore.username
+    val isUsernameLocked: Boolean get() = tokenStore.usernameLocked
 
-    val accessToken: Flow<String?> = dataStore.data.map { it[KEY_ACCESS_TOKEN] }
-    val username: Flow<String?>    = dataStore.data.map { it[KEY_USERNAME] }
-    val isUsernameLocked: Flow<Boolean> = dataStore.data.map { it[KEY_USERNAME_LOCKED] ?: false }
+    fun isTokenValid(): Boolean = tokenStore.isTokenValid
 
-    fun bearerHeader(token: String) = "Bearer $token"
+    // ─── Letztes Wheelhotel ───────────────────────────────────────────────────
 
-    suspend fun isTokenValid(): Boolean {
-        val expiry = dataStore.data.first()[KEY_TOKEN_EXPIRY] ?: return false
-        return System.currentTimeMillis() < expiry
-    }
-
-    // ─── Letztes Wheelhotel ──────────────────────────────────────────────────
-
-    suspend fun getLastWheelhotel(): Wheelhotel? {
-        val prefs = dataStore.data.first()
-        val id   = prefs[KEY_LAST_WH_ID]   ?: return null
-        val name = prefs[KEY_LAST_WH_NAME] ?: return null
+    fun getLastWheelhotel(): Wheelhotel? {
+        val id   = tokenStore.lastWheelhotelId   ?: return null
+        val name = tokenStore.lastWheelhotelName ?: return null
         return Wheelhotel(id = id, name = name, address = null, branchManager = null)
     }
 
-    suspend fun saveLastWheelhotel(wh: Wheelhotel) {
-        dataStore.edit { prefs ->
-            prefs[KEY_LAST_WH_ID]   = wh.id
-            prefs[KEY_LAST_WH_NAME] = wh.name
-        }
+    fun saveLastWheelhotel(wh: Wheelhotel) {
+        tokenStore.lastWheelhotelId   = wh.id
+        tokenStore.lastWheelhotelName = wh.name
     }
 
-    // ─── Session abgelaufen ──────────────────────────────────────────────────
+    // ─── Session / Logout ─────────────────────────────────────────────────────
 
-    suspend fun markSessionExpired() {
-        dataStore.edit { prefs ->
-            prefs.remove(KEY_ACCESS_TOKEN)
-            prefs.remove(KEY_REFRESH_TOKEN)
-            prefs.remove(KEY_TOKEN_EXPIRY)
-            // Letztes WH behalten, damit nach Re-Login die Auswahl übersprungen wird
-            prefs[KEY_USERNAME_LOCKED] = true
-        }
+    /** Tokens weg, Username merken + sperren (für Re-Login). */
+    fun markSessionExpired() = tokenStore.markSessionExpired()
+
+    fun logout(lockUsername: Boolean = false) {
+        if (lockUsername) tokenStore.markSessionExpired() else tokenStore.clear()
     }
 
     // ─── Login ───────────────────────────────────────────────────────────────
@@ -100,13 +75,7 @@ class AuthRepository @Inject constructor(
                 val body = response.body()
                     ?: return AuthResult.Error("Login fehlgeschlagen")
 
-                dataStore.edit { prefs ->
-                    prefs[KEY_ACCESS_TOKEN]    = body.accessToken
-                    prefs[KEY_REFRESH_TOKEN]   = body.refreshToken
-                    prefs[KEY_USERNAME]        = username
-                    prefs[KEY_TOKEN_EXPIRY]    = System.currentTimeMillis() + body.expiresIn * 1000L
-                    prefs[KEY_USERNAME_LOCKED] = false
-                }
+                tokenStore.saveLogin(username, body)
                 AuthResult.Success(Unit)
             } else {
                 AuthResult.Error("Login fehlgeschlagen")
@@ -117,13 +86,15 @@ class AuthRepository @Inject constructor(
     }
 
     // ─── Wheelhotels laden ───────────────────────────────────────────────────
+    // Bearer setzt der AuthInterceptor, ein abgelaufener Token wird vom
+    // TokenAuthenticator still erneuert. Ein 401 landet hier nur noch, wenn
+    // AUCH der Refresh fehlgeschlagen ist -> echte Session-Expiry.
 
     suspend fun getWheelhotels(): AuthResult<List<Wheelhotel>> {
-        val token = dataStore.data.first()[KEY_ACCESS_TOKEN]
-            ?: return AuthResult.Error("Nicht eingeloggt")
+        if (tokenStore.accessToken == null) return AuthResult.Error("Nicht eingeloggt")
 
         return try {
-            val response = fourWheelsApi.getWheelhotels(bearerHeader(token))
+            val response = fourWheelsApi.getWheelhotels()
 
             if (response.isSuccessful) {
                 val list = response.body() ?: emptyList()
@@ -135,22 +106,6 @@ class AuthRepository @Inject constructor(
             }
         } catch (e: Exception) {
             AuthResult.Error("Keine Verbindung zum Server")
-        }
-    }
-
-    // ─── Logout ──────────────────────────────────────────────────────────────
-
-    suspend fun logout(lockUsername: Boolean = false) {
-        dataStore.edit { prefs ->
-            if (lockUsername) {
-                prefs.remove(KEY_ACCESS_TOKEN)
-                prefs.remove(KEY_REFRESH_TOKEN)
-                prefs.remove(KEY_TOKEN_EXPIRY)
-                // Letztes WH behalten, damit nach Re-Login die Auswahl übersprungen wird
-                prefs[KEY_USERNAME_LOCKED] = true
-            } else {
-                prefs.clear()
-            }
         }
     }
 }

@@ -4,12 +4,10 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.stringPreferencesKey
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.fourwheels.radwechsel.api.FourWheelsApi
+import com.fourwheels.radwechsel.auth.TokenStore
 import com.fourwheels.radwechsel.model.WheelChangeRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -19,8 +17,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -45,7 +41,7 @@ data class QueueItem(
 class QueueManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val fourWheelsApi: FourWheelsApi,
-    private val dataStore: DataStore<Preferences>
+    private val tokenStore: TokenStore
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val gson = Gson()
@@ -120,11 +116,9 @@ class QueueManager @Inject constructor(
             val pending = _pendingItems.value.toList()
             if (pending.isEmpty()) return
 
-            val token = dataStore.data
-                .map { it[stringPreferencesKey("access_token")] }
-                .first()
-
-            if (token == null) {
+            // Nicht eingeloggt → Queue pausieren. Bearer + 401-Refresh übernimmt
+            // beim Senden der AuthInterceptor/TokenAuthenticator automatisch.
+            if (tokenStore.accessToken == null) {
                 Log.w("QueueManager", "Kein Token – Queue pausiert")
                 return
             }
@@ -132,7 +126,6 @@ class QueueManager @Inject constructor(
             for (item in pending) {
                 try {
                     val response = fourWheelsApi.postWheelChange(
-                        bearer = "Bearer $token",
                         body = WheelChangeRequest(
                             licensePlate = item.licensePlate,
                             torque       = item.torque,

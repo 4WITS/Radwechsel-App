@@ -4,12 +4,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import com.fourwheels.radwechsel.model.Wheelhotel
 import com.fourwheels.radwechsel.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
@@ -28,20 +25,19 @@ class AppViewModel @Inject constructor(
         private set
 
     init {
-        viewModelScope.launch {
-            if (authRepository.isTokenValid()) {
-                val lastWH = authRepository.getLastWheelhotel()
-                initialWheelhotel = lastWH
-                initialUsername = authRepository.username.first() ?: ""
-                startDestination = if (lastWH != null) Routes.RADWECHSEL else Routes.RH_AUSWAHL
-            } else {
-                // Wenn ein Username gespeichert war → Session als abgelaufen markieren (Username locken)
-                val savedUsername = authRepository.username.first()
-                if (!savedUsername.isNullOrBlank()) {
-                    authRepository.markSessionExpired()
-                }
-                startDestination = Routes.LOGIN
+        // TokenStore liest synchron -> keine Coroutine nötig.
+        if (authRepository.isTokenValid()) {
+            val lastWH = authRepository.getLastWheelhotel()
+            initialWheelhotel = lastWH
+            initialUsername = authRepository.username ?: ""
+            startDestination = if (lastWH != null) Routes.RADWECHSEL else Routes.RH_AUSWAHL
+        } else {
+            // War ein Username gespeichert -> Session als abgelaufen markieren (Username locken)
+            val savedUsername = authRepository.username
+            if (!savedUsername.isNullOrBlank()) {
+                authRepository.markSessionExpired()
             }
+            startDestination = Routes.LOGIN
         }
     }
 }

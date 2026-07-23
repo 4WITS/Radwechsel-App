@@ -11,8 +11,8 @@ import retrofit2.http.*
 interface AuthApi {
 
     /**
-     * OAuth2 Password Flow.
-     * Content-Type: application/x-www-form-urlencoded  (Retrofit @FormUrlEncoded)
+     * OAuth2 Password Flow – Erst-Login mit Credentials.
+     * Content-Type: application/x-www-form-urlencoded (Retrofit @FormUrlEncoded)
      */
     @FormUrlEncoded
     @POST("internal/token")
@@ -23,16 +23,32 @@ interface AuthApi {
         @Field("username")   username: String,
         @Field("password")   password: String
     ): Response<TokenResponse>
+
+    /**
+     * OAuth2 Refresh Flow – tauscht den Refresh-Token gegen ein frisches
+     * Access-Token. Wird vom [com.fourwheels.radwechsel.auth.TokenAuthenticator]
+     * bei HTTP 401 aufgerufen.
+     *
+     * Gibt TokenResponse DIREKT zurück (kein Response-Wrapper): bei Fehler wirft
+     * Retrofit eine Exception, die der Authenticator via runCatching abfängt.
+     */
+    @FormUrlEncoded
+    @POST("internal/token")
+    suspend fun refresh(
+        @Field("grant_type")    grantType: String = "refresh_token",
+        @Field("client_id")     clientId: String,
+        @Field("refresh_token") refreshToken: String
+    ): TokenResponse
 }
 
 // ─── 4Wheels API (api-test.4wheels.de) ───────────────────────────────────────
+// Der Authorization-Header wird vom AuthInterceptor automatisch gesetzt,
+// der 401-Refresh vom TokenAuthenticator – daher KEIN @Header-Parameter mehr.
 
 interface FourWheelsApi {
 
     @GET("api/4wheels/wheelhotels")
-    suspend fun getWheelhotels(
-        @Header("Authorization") bearer: String
-    ): Response<List<Wheelhotel>>
+    suspend fun getWheelhotels(): Response<List<Wheelhotel>>
 
     /**
      * Endpunkt existiert noch nicht – Struktur abgestimmt auf WheelChangeRequest.
@@ -40,7 +56,6 @@ interface FourWheelsApi {
      */
     @POST("api/4wheels/wheel-change")
     suspend fun postWheelChange(
-        @Header("Authorization") bearer: String,
         @Body body: WheelChangeRequest
     ): Response<Unit>
 }

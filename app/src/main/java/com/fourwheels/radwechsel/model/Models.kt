@@ -5,10 +5,11 @@ import com.google.gson.annotations.SerializedName
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
 data class TokenResponse(
-    @SerializedName("token_type")    val tokenType: String,
+    @SerializedName("token_type")    val tokenType: String? = null,
     @SerializedName("expires_in")    val expiresIn: Int,
     @SerializedName("access_token")  val accessToken: String,
-    @SerializedName("refresh_token") val refreshToken: String
+    // Beim Refresh liefert der Server evtl. keinen neuen Refresh-Token -> nullable.
+    @SerializedName("refresh_token") val refreshToken: String? = null
 )
 
 // ─── Wheelhotel ──────────────────────────────────────────────────────────────
