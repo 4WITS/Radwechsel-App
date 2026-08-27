@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Erzeugte Reports liegen unter cacheDir/reports und werden per
+         FileProvider als content://-URI an die Mail-App übergeben. -->
+    <cache-path name="reports" path="reports/" />
+</paths>

@@ -91,7 +91,13 @@ class QueueManager @Inject constructor(
         scope.launch {
             while (true) {
                 delay(5_000)
-                processQueue()
+                try {
+                    processQueue()
+                } catch (e: Exception) {
+                    // Worker darf niemals sterben – sonst bleibt die Queue für immer stehen.
+                    Log.e("QueueManager", "Fehler im Worker – wird ignoriert", e)
+                    isProcessing.set(false)
+                }
             }
         }
     }
@@ -108,13 +114,15 @@ class QueueManager @Inject constructor(
             return
         }
         try {
+            // Erst der günstige Check: nichts zu tun -> raus, ohne System-Services
+            // (ConnectivityManager) alle 5 s unnötig anzufassen.
+            val pending = _pendingItems.value.toList()
+            if (pending.isEmpty()) return
+
             if (!isOnline()) {
                 Log.d("QueueManager", "Offline – Queue pausiert")
                 return
             }
-
-            val pending = _pendingItems.value.toList()
-            if (pending.isEmpty()) return
 
             // Nicht eingeloggt → Queue pausieren. Bearer + 401-Refresh übernimmt
             // beim Senden der AuthInterceptor/TokenAuthenticator automatisch.
@@ -169,9 +177,15 @@ class QueueManager @Inject constructor(
 
     private fun loadFromDisk() {
         val json = prefs.getString("queue", null) ?: return
-        val type = object : TypeToken<List<QueueItem>>() {}.type
-        val all: List<QueueItem> = gson.fromJson(json, type)
-        _pendingItems.value = all.filter { it.status == QueueItemStatus.PENDING }
-        _failedItems.value  = all.filter { it.status == QueueItemStatus.FAILED }
+        try {
+            val type = object : TypeToken<List<QueueItem>>() {}.type
+            val all: List<QueueItem> = gson.fromJson(json, type) ?: emptyList()
+            _pendingItems.value = all.filter { it.status == QueueItemStatus.PENDING }
+            _failedItems.value  = all.filter { it.status == QueueItemStatus.FAILED }
+        } catch (e: Exception) {
+            // Kaputtes/inkompatibles JSON darf die App beim Start NICHT crashen.
+            Log.e("QueueManager", "Queue konnte nicht geladen werden – wird verworfen", e)
+            prefs.edit().remove("queue").apply()
+        }
     }
 }

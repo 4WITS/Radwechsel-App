@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.FactCheck
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -20,9 +21,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -33,7 +38,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.fourwheels.radwechsel.export.ReportSharer
 import com.fourwheels.radwechsel.model.Wheelhotel
+import kotlinx.coroutines.delay
+import com.fourwheels.radwechsel.session.CompletedRadwechsel
 import com.fourwheels.radwechsel.ui.login.Red4Wheels
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -45,13 +53,29 @@ fun RadwechselScreen(
     viewModel: RadwechselViewModel = hiltViewModel()
 ) {
     LaunchedEffect(wheelhotel) { viewModel.wheelhotel = wheelhotel }
+    LaunchedEffect(username) { viewModel.username = username }
 
+    // Session-Wächter: Ist der Token endgültig abgelaufen (Refresh nicht mehr möglich),
+    // den Nutzer sauber zur Anmeldung schicken – niemals mit leerem Header hängenbleiben.
+    LaunchedEffect(Unit) {
+        while (true) {
+            if (!viewModel.sessionAlive()) {
+                onLoggedOut()
+                break
+            }
+            delay(20_000)
+        }
+    }
+
+    val context = LocalContext.current
     val state = viewModel.uiState
     val failedItems by viewModel.failedItems.collectAsState()
     val pendingItems by viewModel.pendingItems.collectAsState()
+    val sessionItems by viewModel.sessionItems.collectAsState()
     val hasOpenData = pendingItems.isNotEmpty() || failedItems.isNotEmpty()
 
     var showQueue by remember { mutableStateOf(false) }
+    var showSession by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
 
     if (showLogoutConfirm) {
@@ -87,6 +111,30 @@ fun RadwechselScreen(
                     }
                 },
                 actions = {
+                    // Session-Liste (erledigte Radwechsel zum Gegencheck)
+                    if (state.phase != RadwechselPhase.LAUFEND) {
+                        BadgedBox(badge = {
+                            if (sessionItems.isNotEmpty()) {
+                                Badge(containerColor = Color.White, contentColor = Red4Wheels) {
+                                    Text("${sessionItems.size}")
+                                }
+                            }
+                        }) {
+                            IconButton(
+                                onClick = {
+                                    showSession = !showSession
+                                    if (showSession) showQueue = false
+                                },
+                                modifier = Modifier.focusProperties { canFocus = false }
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Outlined.FactCheck,
+                                    contentDescription = "Erledigte Radwechsel",
+                                    tint = Color.White
+                                )
+                            }
+                        }
+                    }
                     // Fehlgeschlagen-Badge
                     if (failedItems.isNotEmpty()) {
                         BadgedBox(badge = {
@@ -94,7 +142,10 @@ fun RadwechselScreen(
                                 Text("${failedItems.size}")
                             }
                         }) {
-                            IconButton(onClick = { showQueue = !showQueue }) {
+                            IconButton(
+                                onClick = { showQueue = !showQueue; if (showQueue) showSession = false },
+                                modifier = Modifier.focusProperties { canFocus = false }
+                            ) {
                                 Icon(
                                     Icons.Outlined.Sync,
                                     contentDescription = "Fehlgeschlagene Übertragungen",
@@ -103,7 +154,10 @@ fun RadwechselScreen(
                             }
                         }
                     } else if (pendingItems.isNotEmpty()) {
-                        IconButton(onClick = { showQueue = !showQueue }) {
+                        IconButton(
+                            onClick = { showQueue = !showQueue; if (showQueue) showSession = false },
+                            modifier = Modifier.focusProperties { canFocus = false }
+                        ) {
                             Icon(
                                 Icons.Outlined.Sync,
                                 contentDescription = "Ausstehende Übertragungen",
@@ -113,10 +167,13 @@ fun RadwechselScreen(
                     }
                     // Logout-Button
                     if (state.phase != RadwechselPhase.LAUFEND) {
-                        IconButton(onClick = {
-                            if (hasOpenData) showLogoutConfirm = true
-                            else viewModel.logout(lockUsername = false, onLoggedOut)
-                        }) {
+                        IconButton(
+                            onClick = {
+                                if (hasOpenData) showLogoutConfirm = true
+                                else viewModel.logout(lockUsername = false, onLoggedOut)
+                            },
+                            modifier = Modifier.focusProperties { canFocus = false }
+                        ) {
                             Icon(
                                 Icons.AutoMirrored.Outlined.Logout,
                                 contentDescription = "Ausloggen",
@@ -130,7 +187,21 @@ fun RadwechselScreen(
         }
     ) { padding ->
 
-        if (showQueue) {
+        if (showSession) {
+            SessionScreen(
+                items = sessionItems,
+                onShare = {
+                    viewModel.buildReportPayload()?.let { p ->
+                        ReportSharer.shareToOutlook(
+                            context, p.xlsx, p.fileName, p.recipient, p.subject, p.body
+                        )
+                    }
+                },
+                viewModel = viewModel,
+                onClose = { showSession = false },
+                modifier = Modifier.padding(padding)
+            )
+        } else if (showQueue) {
             QueueScreen(
                 failedItems = failedItems,
                 pendingItems = pendingItems,
@@ -173,6 +244,22 @@ private fun EingabeScreen(
 ) {
     val focusManager = LocalFocusManager.current
     var kennzeichenFocused by remember { mutableStateOf(false) }
+    var radsatzFocused by remember { mutableStateOf(false) }
+    val kennzeichenFocus = remember { FocusRequester() }
+    val radsatzFocus = remember { FocusRequester() }
+
+    // Beim Öffnen der Maske Kennzeichen fokussieren, damit ein Scan/eine Eingabe
+    // sicher in einem Textfeld landet und NICHT eine TopBar-Aktion (Enter) auslöst.
+    LaunchedEffect(Unit) { kennzeichenFocus.requestFocus() }
+
+    // Nach vollständigem Radsatz-Scan: Fokus lösen -> Tastatur verschwindet,
+    // der Start-Button ist direkt erreichbar.
+    LaunchedEffect(viewModel.radsatzScanCompleted) {
+        if (viewModel.radsatzScanCompleted) {
+            focusManager.clearFocus()
+            viewModel.consumeRadsatzScanCompleted()
+        }
+    }
 
     Column(
         modifier = modifier
@@ -188,15 +275,16 @@ private fun EingabeScreen(
                 onValueChange = viewModel::onKennzeichenChange,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .focusRequester(kennzeichenFocus)
                     .onFocusChanged { kennzeichenFocused = it.isFocused },
                 singleLine = true,
                 cursorBrush = SolidColor(Red4Wheels),
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Characters,
-                    imeAction = ImeAction.Done
+                    imeAction = ImeAction.Next
                 ),
                 keyboardActions = KeyboardActions(
-                    onDone = { focusManager.clearFocus() }
+                    onNext = { radsatzFocus.requestFocus() }
                 ),
                 textStyle = LocalTextStyle.current.copy(
                     fontFamily = FontFamily.Monospace,
@@ -216,6 +304,61 @@ private fun EingabeScreen(
                             )
                         }
                         innerTextField()
+                    }
+                }
+            )
+        }
+
+        // Neue Radsatznummer (Barcode scannen, OPTIONAL – geht NICHT an die API)
+        InputCard(
+            label = "NEUE RADSATZNUMMER (OPTIONAL)",
+            isFocused = radsatzFocused,
+            leadingIcon = Icons.Outlined.QrCodeScanner
+        ) {
+            BasicTextField(
+                value = state.radsatznummer,
+                onValueChange = viewModel::onRadsatznummerChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(radsatzFocus)
+                    .onFocusChanged { radsatzFocused = it.isFocused },
+                singleLine = true,
+                cursorBrush = SolidColor(Red4Wheels),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = { focusManager.clearFocus() }
+                ),
+                textStyle = LocalTextStyle.current.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    letterSpacing = 1.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                ),
+                decorationBox = { innerTextField ->
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (state.radsatznummer.isEmpty()) {
+                                Text(
+                                    "Barcode scannen (optional)",
+                                    color = Color.Gray,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 18.sp
+                                )
+                            }
+                            innerTextField()
+                        }
+                        if (state.radsatznummer.isNotEmpty()) {
+                            Icon(
+                                Icons.Outlined.CheckCircle,
+                                contentDescription = "erfasst",
+                                tint = Color(0xFF16A34A),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
             )
@@ -436,6 +579,14 @@ private fun ErfolgScreen(
                 fontFamily = FontFamily.Monospace,
                 color = Color(0xFF374151)
             )
+            if (state.radsatznummer.isNotBlank()) {
+                Text(
+                    "Radsatz ${state.radsatznummer}",
+                    fontSize = 14.sp,
+                    color = Color.Gray,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
             Text(
                 viewModel.formatTimer(state.timerSeconds),
                 fontSize = 14.sp,
@@ -556,12 +707,107 @@ private fun QueueItemCard(item: QueueItem, isFailed: Boolean, onRetry: () -> Uni
     }
 }
 
+// ── Session-Ansicht (erledigte Radwechsel + Excel-Mail) ───────────────────────
+
+@Composable
+private fun SessionScreen(
+    items: List<CompletedRadwechsel>,
+    onShare: () -> Unit,
+    viewModel: RadwechselViewModel,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onClose) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Zurück")
+            }
+            Text("Erledigt (Session)", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+            Text("${items.size}", fontWeight = FontWeight.Bold, color = Color.Gray, fontSize = 14.sp)
+        }
+
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (items.isEmpty()) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        Text("Noch keine Radwechsel in dieser Session.", color = Color.Gray)
+                    }
+                }
+            } else {
+                items(items.reversed(), key = { it.id }) { item ->
+                    SessionItemCard(item = item, timerText = viewModel.formatTimer(item.durationSeconds))
+                }
+            }
+        }
+
+        // Excel-Versand (fester Empfänger radwechsel@4wheels.de über Outlook)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFF9FAFB))
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Outlined.Email, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                Text("An radwechsel@4wheels.de", fontSize = 12.sp, color = Color.Gray)
+            }
+
+            Button(
+                onClick = onShare,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                enabled = items.isNotEmpty(),
+                colors = ButtonDefaults.buttonColors(containerColor = Red4Wheels),
+                shape = MaterialTheme.shapes.medium
+            ) {
+                Icon(Icons.Outlined.Email, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Als Excel per Outlook senden", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SessionItemCard(item: CompletedRadwechsel, timerText: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF9FAFB)),
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(item.kennzeichen, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 15.sp)
+                Text(
+                    buildString {
+                        if (item.radsatznummer.isNotBlank()) append("Radsatz ${item.radsatznummer} · ")
+                        append("${item.torque} Nm · $timerText")
+                    },
+                    fontSize = 12.sp, color = Color.Gray
+                )
+            }
+            Icon(
+                Icons.Outlined.CheckCircle, contentDescription = null,
+                tint = Color(0xFF16A34A), modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
 // ── Hilfs-Composables ────────────────────────────────────────────────────────
 
 @Composable
 private fun InputCard(
     label: String,
     isFocused: Boolean,
+    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     content: @Composable () -> Unit
 ) {
     Column(
@@ -577,7 +823,12 @@ private fun InputCard(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6B7280), letterSpacing = 1.sp)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (leadingIcon != null) {
+                Icon(leadingIcon, contentDescription = null, tint = Red4Wheels, modifier = Modifier.size(14.dp))
+            }
+            Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6B7280), letterSpacing = 1.sp)
+        }
         content()
     }
 }

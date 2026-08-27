@@ -38,6 +38,13 @@ class AuthRepository @Inject constructor(
 
     fun isTokenValid(): Boolean = tokenStore.isTokenValid
 
+    /** Session ist erneuerbar, solange ein Refresh-Token vorliegt (auch wenn der
+     *  Access-Token lokal abgelaufen ist – den erneuert der TokenAuthenticator still). */
+    fun hasRefreshToken(): Boolean = tokenStore.refreshToken != null
+
+    /** Eingeloggt = gültiger Access-Token ODER erneuerbar per Refresh-Token. */
+    fun hasSession(): Boolean = tokenStore.isTokenValid || tokenStore.refreshToken != null
+
     // ─── Letztes Wheelhotel ───────────────────────────────────────────────────
 
     fun getLastWheelhotel(): Wheelhotel? {

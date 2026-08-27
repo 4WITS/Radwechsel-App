@@ -26,17 +26,16 @@ class AppViewModel @Inject constructor(
 
     init {
         // TokenStore liest synchron -> keine Coroutine nötig.
-        if (authRepository.isTokenValid()) {
+        // WICHTIG: nicht nur auf den (nach ~1 h ablaufenden) Access-Token schauen,
+        // sondern auch auf den Refresh-Token. Sonst würde nach etwas Leerlauf die
+        // eigentlich noch erneuerbare Session verworfen (RH/Benutzer "fliegen raus").
+        // Den abgelaufenen Access-Token erneuert der TokenAuthenticator still.
+        if (authRepository.hasSession()) {
             val lastWH = authRepository.getLastWheelhotel()
             initialWheelhotel = lastWH
             initialUsername = authRepository.username ?: ""
             startDestination = if (lastWH != null) Routes.RADWECHSEL else Routes.RH_AUSWAHL
         } else {
-            // War ein Username gespeichert -> Session als abgelaufen markieren (Username locken)
-            val savedUsername = authRepository.username
-            if (!savedUsername.isNullOrBlank()) {
-                authRepository.markSessionExpired()
-            }
             startDestination = Routes.LOGIN
         }
     }
