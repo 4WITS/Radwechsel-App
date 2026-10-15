@@ -24,6 +24,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -244,6 +247,7 @@ class QueueManager @Inject constructor(
                 try {
                     // Netzwerk-Call bewusst OHNE Lock (darf nicht blockieren)
                     val response = fourWheelsApi.postWheelChange(
+                        dateOfAction = dateOfAction(item.finishedAt),
                         body = WheelChangeRequest(
                             wheelhotel   = wheelhotelId,
                             username     = username,
@@ -300,6 +304,15 @@ class QueueManager @Inject constructor(
             isProcessing.set(false)
         }
     }
+
+    /**
+     * Ende des Radwechsels in Gerätezeit mit Offset, z.B. 2026-10-15T10:14:47+02:00.
+     * Die API erwartet die ersten 19 Zeichen als Datum/Uhrzeit; der Offset sorgt
+     * dafür, dass kurz vor Mitternacht nicht der UTC-Tag genommen wird.
+     */
+    private fun dateOfAction(finishedAtIso: String): String =
+        runCatching { DATE_OF_ACTION.format(Instant.parse(finishedAtIso).atZone(ZoneId.systemDefault())) }
+            .getOrDefault(finishedAtIso)
 
     /** Nur unter [lock] aufrufen. */
     private fun markFailedLocked(item: QueueItem, error: String) {
@@ -364,6 +377,8 @@ class QueueManager @Inject constructor(
 
         /** Sicherheitsnetz, falls kein Anlass kommt: alle 10 Minuten ein Versuch. */
         const val RETRY_INTERVAL_MS = 10L * 60 * 1000
+
+        val DATE_OF_ACTION: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX")
     }
 
     /** Frühere Versionen hielten die Queue in SharedPreferences. */

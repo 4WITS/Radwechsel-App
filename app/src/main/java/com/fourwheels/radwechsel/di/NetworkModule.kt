@@ -25,7 +25,10 @@ object NetworkModule {
     private const val AUTH_BASE_URL = BuildConfig.AUTH_BASE_URL
     private const val API_BASE_URL  = BuildConfig.API_BASE_URL
     private const val CLIENT_ID     = BuildConfig.CLIENT_ID
-    const val SCOPE = "meta:read wheelhotel:read wheelhotel:write"
+    // Genau das, was die App braucht (geprüft im 4wheels-api-Repo):
+    //   wheelhotel:read     GET  api/4wheels/wheelhotels
+    //   wheelchange:create  POST api/4wheels/wheel-change
+    const val SCOPE = "wheelhotel:read wheelchange:create"
 
     private fun logging() = HttpLoggingInterceptor().apply {
         // BODY loggt Passwoerter und Tokens im Klartext -> nur im Debug-Build

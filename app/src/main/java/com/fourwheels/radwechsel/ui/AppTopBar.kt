@@ -39,8 +39,8 @@ import com.fourwheels.radwechsel.ui.login.Red4Wheels
  * Einheitlicher Kopf für alle Masken nach dem Login (gleich aufgebaut wie in der
  * RR-Inventur), damit der Mitarbeiter überall sieht, wo er gerade erfasst:
  *  1. Zeile: "Radwechsel"
- *  2. Zeile: Benutzer
- *  3. Zeile: Kostenstelle · Räderhotel
+ *  2. Zeile: Benutzer · Kostenstelle
+ *  3. Zeile: Name des Räderhotels (bis zu zwei Zeilen)
  *
  * Bewusst kein Material-TopAppBar: der hat eine feste Höhe und bietet nur Platz
  * für zwei Zeilen.
@@ -53,9 +53,14 @@ fun AppTopBar(
     navigationIcon: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
-    // Immer drei Zeilen, damit der Kopf in allen Masken gleich hoch ist – vor der
-    // RH-Auswahl steht in der dritten Zeile deshalb ein Platzhalter.
-    val location = wheelhotel?.let { "KST ${it.id} · ${it.displayName}" } ?: "Räderhotel wählen"
+    // Zeile 2: Benutzer und Kostenstelle, Zeile 3: Name des Räderhotels. Vor der
+    // RH-Auswahl steht in der dritten Zeile ein Platzhalter, damit der Kopf in
+    // allen Masken gleich aufgebaut ist.
+    val userLine = listOfNotNull(
+        username.uppercase().ifBlank { null },
+        wheelhotel?.let { "KST ${it.id}" }
+    ).joinToString(" · ")
+    val location = wheelhotel?.displayName ?: "Räderhotel wählen"
 
     Surface(color = Red4Wheels, contentColor = Color.White) {
         CompositionLocalProvider(LocalContentColor provides Color.White) {
@@ -79,12 +84,14 @@ fun AppTopBar(
                 Column(Modifier.weight(1f).padding(start = 4.dp, top = 8.dp, bottom = 8.dp)) {
                     Text("Radwechsel", fontWeight = FontWeight.Bold, fontSize = 17.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(username.uppercase(), fontSize = 12.sp, lineHeight = 15.sp,
+                    Text(userLine, fontSize = 12.sp, lineHeight = 15.sp,
                         color = Color.White.copy(alpha = 0.75f),
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // Räderhotel-Namen sind oft lang – eigene Zeile, notfalls
+                    // umbrechen statt abschneiden.
                     Text(location, fontSize = 12.sp, lineHeight = 15.sp,
                         color = Color.White.copy(alpha = 0.75f),
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 actions()
             }

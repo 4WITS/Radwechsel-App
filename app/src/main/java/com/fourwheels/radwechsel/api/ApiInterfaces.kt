@@ -19,7 +19,7 @@ interface AuthApi {
     suspend fun login(
         @Field("grant_type") grantType: String = "password",
         @Field("client_id")  clientId: String,
-        @Field("scope")      scope: String = "meta:read wheelhotel:read wheelhotel:write",
+        @Field("scope")      scope: String,
         @Field("username")   username: String,
         @Field("password")   password: String
     ): Response<TokenResponse>
@@ -57,6 +57,11 @@ interface FourWheelsApi {
      */
     @POST("api/4wheels/wheel-change")
     suspend fun postWheelChange(
+        // Tag, auf den die API den Wechsel bucht. Ohne Header nimmt sie den
+        // Empfangszeitpunkt – ein offline erfasster Wechsel, der erst am
+        // nächsten Tag rausgeht, landete sonst auf dem falschen Tag.
+        // Format: yyyy-MM-dd'T'HH:mm:ss mit Offset (siehe DateOfActionStore der API).
+        @Header("x-date-of-action") dateOfAction: String,
         @Body body: WheelChangeRequest
     ): Response<Unit>
 }

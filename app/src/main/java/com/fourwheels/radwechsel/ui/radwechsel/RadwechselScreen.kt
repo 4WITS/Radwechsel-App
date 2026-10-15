@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -109,30 +110,6 @@ fun RadwechselScreen(
                 username = username,
                 wheelhotel = wheelhotel,
                 actions = {
-                    // Session-Liste (erledigte Radwechsel zum Gegencheck)
-                    if (!running) {
-                        BadgedBox(badge = {
-                            if (sessionItems.isNotEmpty()) {
-                                Badge(containerColor = Color.White, contentColor = Red4Wheels) {
-                                    Text("${sessionItems.size}")
-                                }
-                            }
-                        }) {
-                            IconButton(
-                                onClick = {
-                                    showSession = !showSession
-                                    if (showSession) showQueue = false
-                                },
-                                modifier = Modifier.focusProperties { canFocus = false }
-                            ) {
-                                Icon(
-                                    Icons.AutoMirrored.Outlined.FactCheck,
-                                    contentDescription = "Erledigte Radwechsel",
-                                    tint = Color.White
-                                )
-                            }
-                        }
-                    }
                     // Warteschlange: fehlgeschlagene Übertragungen sollen immer
                     // auffallen, nicht erst beim nächsten Radwechsel.
                     QueueAction(pendingItems.size, failedItems.size) {
@@ -149,6 +126,18 @@ fun RadwechselScreen(
                             Icon(Icons.Outlined.MoreVert, contentDescription = "Menü")
                         }
                         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                            // Erledigte Radwechsel zum Gegencheck + Excel-Versand. Bewusst
+                            // im Menü: oben steht nur ein Symbol, die Übertragungen.
+                            DropdownMenuItem(
+                                text = { Text("Erledigte Radwechsel (${sessionItems.size})") },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Outlined.FactCheck, contentDescription = null) },
+                                enabled = !running,
+                                onClick = {
+                                    showMenu = false
+                                    showSession = true
+                                    showQueue = false
+                                }
+                            )
                             DropdownMenuItem(
                                 text = { Text("Protokoll an IT senden") },
                                 leadingIcon = { Icon(painterResource(R.drawable.ic_log), contentDescription = null) },
@@ -656,6 +645,10 @@ private fun QueueScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Fehlgeschlagene zuerst zeigen, wenn es welche gibt – nur die brauchen eine Aktion
+    var tab by rememberSaveable { mutableIntStateOf(if (failedItems.isNotEmpty()) TAB_FAILED else TAB_OPEN) }
+    val shown = if (tab == TAB_OPEN) pendingItems else failedItems
+
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -666,37 +659,50 @@ private fun QueueScreen(
             }
             Text("Übertragungen", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
         }
-        // Gilt für alles Offene: fehlgeschlagene kommen zurück in die Warteschlange,
-        // ausstehende gehen sofort raus statt erst beim nächsten Intervall.
-        val openCount = failedItems.size + pendingItems.size
-        if (openCount > 0) {
+        TabRow(selectedTabIndex = tab, containerColor = Color.White, contentColor = Red4Wheels) {
+            Tab(
+                selected = tab == TAB_OPEN,
+                onClick = { tab = TAB_OPEN },
+                selectedContentColor = Red4Wheels,
+                unselectedContentColor = Color.Gray,
+                text = { Text("Offen (${pendingItems.size})", fontWeight = FontWeight.Bold) }
+            )
+            Tab(
+                selected = tab == TAB_FAILED,
+                onClick = { tab = TAB_FAILED },
+                selectedContentColor = Red4Wheels,
+                unselectedContentColor = Color.Gray,
+                text = { Text("Fehlgeschlagen (${failedItems.size})", fontWeight = FontWeight.Bold) }
+            )
+        }
+        // Offenes geht bei Netz automatisch raus – erneut senden gibt es nur für Fehlgeschlagene
+        if (tab == TAB_FAILED && shown.isNotEmpty()) {
             Button(
                 onClick = onRetryAll,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(48.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp).height(48.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Red4Wheels),
                 shape = MaterialTheme.shapes.medium
             ) {
                 Icon(Icons.Outlined.Sync, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Alle erneut senden ($openCount)", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text("Alle erneut senden (${shown.size})", fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
         }
         LazyColumn(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            if (failedItems.isNotEmpty()) {
-                item { QueueHeader("FEHLGESCHLAGEN") }
-                items(failedItems, key = { it.id }) { QueueItemCard(it, true) { onRetryItem(it.id) } }
-            }
-            if (pendingItems.isNotEmpty()) {
-                item { QueueHeader("AUSSTEHEND") }
-                items(pendingItems, key = { it.id }) { QueueItemCard(it, false) {} }
-            }
-            if (failedItems.isEmpty() && pendingItems.isEmpty()) {
+            items(shown, key = { it.id }) { QueueItemCard(it, tab == TAB_FAILED) { onRetryItem(it.id) } }
+            if (shown.isEmpty()) {
                 item {
                     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        Text("Alle Daten übertragen ✓", color = Color(0xFF16A34A), fontWeight = FontWeight.SemiBold)
+                        if (tab == TAB_OPEN && failedItems.isEmpty()) {
+                            Text("Alle Daten übertragen ✓", color = Color(0xFF16A34A), fontWeight = FontWeight.SemiBold)
+                        } else if (tab == TAB_OPEN) {
+                            Text("Nichts offen", color = Color.Gray)
+                        } else {
+                            Text("Keine fehlgeschlagenen Übertragungen", color = Color.Gray)
+                        }
                     }
                 }
             }
@@ -704,11 +710,8 @@ private fun QueueScreen(
     }
 }
 
-@Composable
-private fun QueueHeader(text: String) {
-    Text(text, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray,
-        letterSpacing = 1.sp, modifier = Modifier.padding(vertical = 4.dp))
-}
+private const val TAB_OPEN = 0
+private const val TAB_FAILED = 1
 
 @Composable
 private fun QueueItemCard(item: QueueItem, isFailed: Boolean, onRetry: () -> Unit) {
