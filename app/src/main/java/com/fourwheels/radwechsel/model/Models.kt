@@ -44,6 +44,8 @@ data class BranchManager(
 // ─── Wheel Change Request ─────────────────────────────────────────────────────
 
 data class WheelChangeRequest(
+    @SerializedName("wheelhotel")    val wheelhotel: String,       // Wheelhotel-ID / Kostenstelle, z. B. "10100"
+    @SerializedName("username")      val username: String,         // angemeldeter Benutzer beim Abschließen
     @SerializedName("licensePlate")  val licensePlate: String,    // Kennzeichen / Auftragsnummer
     @SerializedName("torque")        val torque: Int,              // Drehmoment in Nm
     @SerializedName("startedAt")     val startedAt: String,        // ISO 8601 UTC mit ms

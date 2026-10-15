@@ -8,26 +8,17 @@ local.properties
 .externalNativeBuild
 .cxx
 
+# IDE – lokaler Maschinenzustand
+/.idea
+
+# Claude Code
+/.claude
+
 # Kotlin
 .kotlin/
 
-# Release-Signing – niemals versionieren, separat sichern!
+# Signing – NIEMALS committen, separat sichern (z.B. Bitwarden)
+keystore.properties
 /keystore/
 *.jks
 *.keystore
-
-# Android Studio / IntelliJ – lokaler Maschinenzustand
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-/.idea/.name
-/.idea/compiler.xml
-/.idea/gradle.xml
-/.idea/misc.xml
-/.idea/deploymentTargetSelector.xml
-/.idea/deviceManager.xml
-/.idea/AndroidProjectSystem.xml
-/.idea/runConfigurations.xml

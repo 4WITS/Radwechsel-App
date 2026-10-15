@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.fourwheels.radwechsel.model.Wheelhotel
 import com.fourwheels.radwechsel.repository.AuthRepository
 import com.fourwheels.radwechsel.repository.AuthResult
+import com.fourwheels.radwechsel.ui.radwechsel.QueueManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -24,7 +25,8 @@ data class LoginUiState(
 
 @HiltViewModel
 class LoginViewModel @Inject constructor(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val queueManager: QueueManager
 ) : ViewModel() {
 
     var uiState by mutableStateOf(LoginUiState())
@@ -61,6 +63,8 @@ class LoginViewModel @Inject constructor(
 
             when (val result = authRepository.login(username, password)) {
                 is AuthResult.Success -> {
+                    // Was ohne Anmeldung liegen geblieben ist, jetzt gleich senden
+                    queueManager.syncNow()
                     val lastWH = authRepository.getLastWheelhotel()
                     uiState = uiState.copy(isLoading = false, loginSuccess = true, lastWheelhotel = lastWH)
                 }

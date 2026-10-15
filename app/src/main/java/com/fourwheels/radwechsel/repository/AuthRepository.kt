@@ -38,12 +38,7 @@ class AuthRepository @Inject constructor(
 
     fun isTokenValid(): Boolean = tokenStore.isTokenValid
 
-    /** Session ist erneuerbar, solange ein Refresh-Token vorliegt (auch wenn der
-     *  Access-Token lokal abgelaufen ist – den erneuert der TokenAuthenticator still). */
-    fun hasRefreshToken(): Boolean = tokenStore.refreshToken != null
-
-    /** Eingeloggt = gültiger Access-Token ODER erneuerbar per Refresh-Token. */
-    fun hasSession(): Boolean = tokenStore.isTokenValid || tokenStore.refreshToken != null
+    fun canResumeSession(): Boolean = tokenStore.canResumeSession
 
     // ─── Letztes Wheelhotel ───────────────────────────────────────────────────
 
@@ -109,7 +104,7 @@ class AuthRepository @Inject constructor(
                 AuthResult.Success(filtered)
             } else {
                 if (response.code() == 401) AuthResult.Error("SESSION_EXPIRED")
-                else AuthResult.Error("Wheelhotels konnten nicht geladen werden")
+                else AuthResult.Error("Räderhotels konnten nicht geladen werden")
             }
         } catch (e: Exception) {
             AuthResult.Error("Keine Verbindung zum Server")

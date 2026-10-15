@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Symbol für "Protokoll an die IT senden" (Dokument mit der Aufschrift LOG).
+  Aus media/log-icon.svg übernommen.
+
+  fillType="evenOdd" ist hier entscheidend: die Buchstaben und der Dokumentknick
+  sind Aussparungen im selben Pfad und würden unter der Standardregel (nonZero)
+  zulaufen.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="1200"
+    android:viewportHeight="1200">
+    <path
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd"
+        android:pathData="M300,100 H730 Q750,100 765,115 L985,335 Q1000,350 1000,370 V1000 A100,100 0 0 1 900,1100 H300 A100,100 0 0 1 200,1000 V900 A100,100 0 0 1 100,800 V550 A100,100 0 0 1 200,450 V200 A100,100 0 0 1 300,100 Z M300,200 H700 V350 A50,50 0 0 0 750,400 H900 V450 H300 Z M300,900 H900 V1000 H300 Z M200,550 H250 V750 H350 V800 H200 Z M500,550 Q600,550 600,660 V690 Q600,800 500,800 Q400,800 400,690 V660 Q400,550 500,550 Z M500,590 Q550,590 550,655 V698 Q550,758 500,758 Q450,758 450,698 V655 Q450,590 500,590 Z M843,600 H750 Q700,600 700,660 V700 Q705,750 760,750 Q775,750 800,741 L799,700 H750 L751,650 H850 V770 Q810,800 750,800 Q650,800 650,690 V660 Q650,550 750,550 Q820,550 843,600 Z" />
+</vector>

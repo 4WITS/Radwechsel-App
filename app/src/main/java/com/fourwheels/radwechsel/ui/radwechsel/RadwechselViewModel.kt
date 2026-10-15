@@ -1,19 +1,28 @@
 package com.fourwheels.radwechsel.ui.radwechsel
 
+import android.content.Intent
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fourwheels.radwechsel.auth.TokenStore
 import com.fourwheels.radwechsel.export.XlsxWriter
+import com.fourwheels.radwechsel.logging.LogExporter
 import com.fourwheels.radwechsel.model.Wheelhotel
 import com.fourwheels.radwechsel.repository.AuthRepository
+import com.fourwheels.radwechsel.scanner.M3Scanner
+import com.fourwheels.radwechsel.scanner.ScanFeedback
 import com.fourwheels.radwechsel.session.CompletedRadwechsel
 import com.fourwheels.radwechsel.session.SessionLog
+import com.google.gson.Gson
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
@@ -51,6 +60,8 @@ private const val REPORT_RECIPIENT = "radwechsel@4wheels.de"
  */
 private val WHEELSET_REGEX = Regex("^\\$?(?:11|70|71)(\\d+)(?:%[1379]|[A-D]).?$")
 
+private const val KEY_DRAFT = "draft"
+
 enum class RadwechselPhase { EINGABE, LAUFEND, ERFOLG }
 
 data class RadwechselUiState(
@@ -77,14 +88,42 @@ data class ReportPayload(
 class RadwechselViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val queueManager: QueueManager,
-    private val sessionLog: SessionLog
+    private val sessionLog: SessionLog,
+    private val savedState: SavedStateHandle,
+    private val feedback: ScanFeedback,
+    private val logExporter: LogExporter,
+    tokenStore: TokenStore,
+    scanner: M3Scanner
 ) : ViewModel() {
 
-    var uiState by mutableStateOf(RadwechselUiState())
+    private val gson = Gson()
+
+    // Ein laufender Radwechsel übersteht so auch, dass Android die App im
+    // Hintergrund beendet (z.B. Speicherdruck) – Start-Zeitpunkt und Eingaben
+    // wären sonst weg.
+    var uiState by mutableStateOf(restoreDraft() ?: RadwechselUiState())
         private set
 
+    private fun update(newState: RadwechselUiState) {
+        uiState = newState
+        savedState[KEY_DRAFT] = gson.toJson(newState)
+    }
+
+    /**
+     * Fehler anzeigen und hörbar/spürbar melden – gleiche Rückmeldung wie in der
+     * RR-Inventur, auch beim zweiten Mal mit demselben Text.
+     */
+    private fun fail(message: String) {
+        update(uiState.copy(error = message))
+        feedback.error()
+    }
+
+    private fun restoreDraft(): RadwechselUiState? =
+        savedState.get<String>(KEY_DRAFT)?.let {
+            runCatching { gson.fromJson(it, RadwechselUiState::class.java) }.getOrNull()
+        }
+
     private var timerJob: Job? = null
-    private var startInstant: Instant? = null
 
     var wheelhotel: Wheelhotel? = null
     var username: String = ""
@@ -99,13 +138,47 @@ class RadwechselViewModel @Inject constructor(
     val pendingItems = queueManager.pendingItems
     val failedItems  = queueManager.failedItems
     val sessionItems = sessionLog.items
+    val sessionExpired = tokenStore.sessionExpired
+
+    /**
+     * Scans sammelt der Screen, nicht der ViewModel: so werden sie nur angenommen,
+     * solange die Radwechsel-Maske sichtbar ist.
+     */
+    val scans = scanner.scans
+
+    init {
+        // Nach Prozess-Tod mitten im Radwechsel: Timer ab dem gespeicherten Start weiterzählen
+        if (uiState.phase == RadwechselPhase.LAUFEND) startTimer()
+    }
 
     // ── Eingabe ─────────────────────────────────────────────────────────────
 
     fun onKennzeichenChange(v: String) {
         if (v.length <= 20) {
-            uiState = uiState.copy(kennzeichen = v.uppercase(), error = null)
+            update(uiState.copy(kennzeichen = v.uppercase(), error = null))
         }
+    }
+
+    /**
+     * Scan vom M3-Scanner (Broadcast, siehe [M3Scanner]). Angenommen wird nur in
+     * der Eingabe-Maske und nur ein Radsatz-Barcode – ein Etikett, das während
+     * eines laufenden Wechsels über den Tisch wandert, ändert nichts.
+     */
+    fun onScan(raw: String) {
+        val code = raw.trim().uppercase()
+        Log.d("RadwechselViewModel", "Scan in ${uiState.phase}")
+        if (uiState.phase != RadwechselPhase.EINGABE) {
+            fail("Scan nicht übernommen – Radwechsel läuft bereits")
+            return
+        }
+        val number = WHEELSET_REGEX.find(code)?.groupValues?.get(1)
+        if (number == null) {
+            fail("Kein Radsatz-Barcode erkannt")
+            return
+        }
+        feedback.success()
+        update(uiState.copy(radsatznummer = number.take(10), error = null))
+        radsatzScanCompleted = true
     }
 
     fun onRadsatznummerChange(v: String) {
@@ -118,56 +191,87 @@ class RadwechselViewModel @Inject constructor(
         // Nach Präfix/Suffix-Abschnitt (bzw. bei manueller Eingabe) auf 10 Zeichen begrenzen.
         val match = WHEELSET_REGEX.find(cleaned)
         val normalized = (match?.groupValues?.get(1) ?: cleaned).take(10)
-        uiState = uiState.copy(radsatznummer = normalized, error = null)
+        update(uiState.copy(radsatznummer = normalized, error = null))
         // Vollständiger Barcode erkannt -> Tastatur ausblenden lassen.
         if (match != null) radsatzScanCompleted = true
     }
 
     fun onTorqueChange(v: String) {
         if (v.all { it.isDigit() } && v.length <= 4) {
-            uiState = uiState.copy(torque = v, error = null)
+            update(uiState.copy(torque = v, error = null))
         }
     }
 
     fun startRadwechsel() {
         if (uiState.kennzeichen.isBlank()) {
-            uiState = uiState.copy(error = "Bitte Kennzeichen / Auftragsnummer eingeben")
+            fail("Bitte Kennzeichen / Auftragsnummer eingeben")
             return
         }
         // Radsatznummer ist optional – kein Zwang zum Scannen.
 
-        startInstant = Instant.now()
-        uiState = uiState.copy(
+        update(uiState.copy(
             phase = RadwechselPhase.LAUFEND,
-            startedAt = ISO_MS.format(startInstant),
+            startedAt = ISO_MS.format(Instant.now()),
             timerSeconds = 0,
             error = null
-        )
+        ))
+        startTimer()
+    }
 
+    /**
+     * Laufzeit immer aus dem Start-Zeitpunkt berechnen statt hochzuzählen: so
+     * driftet sie nicht und stimmt auch nach einem Neustart der App.
+     */
+    private fun startTimer() {
+        timerJob?.cancel()
         timerJob = viewModelScope.launch {
             while (true) {
+                uiState = uiState.copy(timerSeconds = elapsedSeconds(uiState.startedAt))
                 delay(1000)
-                uiState = uiState.copy(timerSeconds = uiState.timerSeconds + 1)
             }
         }
     }
 
+    private fun elapsedSeconds(startedAtIso: String): Int = runCatching {
+        Duration.between(Instant.parse(startedAtIso), Instant.now()).seconds.toInt().coerceAtLeast(0)
+    }.getOrDefault(0)
+
     fun abbrechen() {
         timerJob?.cancel()
-        uiState = RadwechselUiState()
+        update(RadwechselUiState())
     }
 
     fun abschliessen() {
         val torqueInt = uiState.torque.toIntOrNull()
         if (torqueInt == null || torqueInt < 50 || torqueInt > 1500) {
-            uiState = uiState.copy(error = "Drehmoment muss zwischen 50 und 1500 Nm liegen")
+            fail("Drehmoment muss zwischen 50 und 1500 Nm liegen")
             return
         }
+        val hotel = wheelhotel
+        if (hotel == null) {
+            // Ohne Wheelhotel würde die API den Radwechsel ablehnen
+            fail("Kein Räderhotel gewählt – bitte neu anmelden")
+            return
+        }
+        // Der angemeldete Benutzer zählt, nicht ein evtl. veralteter Anzeigewert
+        val user = authRepository.username?.takeIf { it.isNotBlank() } ?: username
 
         timerJob?.cancel()
         val finishedAt = ISO_MS.format(Instant.now())
-        val duration = uiState.timerSeconds
-        uiState = uiState.copy(phase = RadwechselPhase.ERFOLG, finishedAt = finishedAt, error = null)
+        val duration = elapsedSeconds(uiState.startedAt)
+
+        // Zuerst sicher in die Queue (synchron auf Platte), erst dann die Erfolgsmeldung
+        queueManager.enqueue(
+            QueueItem(
+                wheelhotelId   = hotel.id,
+                username       = user,
+                licensePlate   = uiState.kennzeichen,
+                torque         = torqueInt,
+                startedAt      = uiState.startedAt,
+                finishedAt     = finishedAt,
+                wheelhotelName = hotel.displayName
+            )
+        )
 
         // Session-Log (inkl. Radsatznummer – nur für Gegencheck/Excel, nicht für API).
         sessionLog.add(
@@ -175,31 +279,25 @@ class RadwechselViewModel @Inject constructor(
                 kennzeichen    = uiState.kennzeichen,
                 radsatznummer  = uiState.radsatznummer,
                 torque         = torqueInt,
-                kostenstelle   = wheelhotel?.id ?: "",
-                standortName   = wheelhotel?.displayName ?: "",
-                benutzer       = username,
+                kostenstelle   = hotel.id,
+                standortName   = hotel.displayName,
+                benutzer       = user,
                 startedAtIso   = uiState.startedAt,
                 finishedAtIso  = finishedAt,
                 durationSeconds = duration
             )
         )
 
-        // API-Übertragung wie gehabt – ohne Radsatznummer.
-        viewModelScope.launch {
-            queueManager.enqueue(
-                QueueItem(
-                    wheelhotelName = wheelhotel?.displayName ?: "",
-                    licensePlate   = uiState.kennzeichen,
-                    torque         = torqueInt,
-                    startedAt      = uiState.startedAt,
-                    finishedAt     = finishedAt
-                )
-            )
-        }
+        update(uiState.copy(
+            phase = RadwechselPhase.ERFOLG,
+            finishedAt = finishedAt,
+            timerSeconds = duration,
+            error = null
+        ))
     }
 
     fun neuerWechsel() {
-        uiState = RadwechselUiState()
+        update(RadwechselUiState())
     }
 
     fun logout(lockUsername: Boolean, onLoggedOut: () -> Unit) {
@@ -217,8 +315,11 @@ class RadwechselViewModel @Inject constructor(
     fun retryAll() = queueManager.retryFailed()
     fun retryItem(id: String) = queueManager.retryItem(id)
 
-    /** Session lebt, solange Access-Token gültig ODER per Refresh erneuerbar ist. */
-    fun sessionAlive(): Boolean = authRepository.hasSession()
+    /**
+     * Fertige Mail mit dem Diagnoseprotokoll an die IT. null = Protokoll konnte
+     * nicht geschrieben werden (der Screen zeigt dann einen Hinweis).
+     */
+    fun buildLogMailIntent(): Intent? = logExporter.buildMailIntent()
 
     // ── Excel-Report an Outlook teilen ────────────────────────────────────────
 

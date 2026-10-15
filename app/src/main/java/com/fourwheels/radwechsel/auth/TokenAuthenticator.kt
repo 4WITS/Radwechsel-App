@@ -9,6 +9,7 @@ import okhttp3.Authenticator
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.Route
+import retrofit2.HttpException
 import javax.inject.Inject
 import javax.inject.Provider
 import javax.inject.Singleton
@@ -24,7 +25,7 @@ import javax.inject.Singleton
  *   refreshen.
  * - War ein anderer Thread schneller, wird der Request einfach mit dem bereits
  *   erneuerten Token wiederholt.
- * - Schlägt der Refresh fehl (kein/abgelaufener Refresh-Token), wird die Session
+ * - Lehnt der Server den Refresh ab (kein/abgelaufener Refresh-Token), wird die Session
  *   als abgelaufen markiert und der ursprüngliche 401 propagiert zurück an das
  *   Repository (-> "SESSION_EXPIRED" -> Re-Login).
  *
@@ -67,8 +68,13 @@ class TokenAuthenticator @Inject constructor(
                         clientId = BuildConfig.CLIENT_ID,
                         refreshToken = refresh,
                     )
-                }.getOrElse {
-                    tokenStore.markSessionExpired()
+                }.getOrElse { e ->
+                    // Nur eine echte Absage des Servers (Refresh-Token ungültig)
+                    // beendet die Sitzung. Ein Funkloch im Lager darf den
+                    // Refresh-Token nicht wegwerfen – dann einfach später erneut.
+                    if (e is HttpException && e.code() in 400..401) {
+                        tokenStore.markSessionExpired()
+                    }
                     return@withLock null
                 }
 

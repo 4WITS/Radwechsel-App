@@ -18,24 +18,28 @@ class AppViewModel @Inject constructor(
     var startDestination by mutableStateOf<String?>(null)
         private set
 
-    var initialWheelhotel by mutableStateOf<Wheelhotel?>(null)
+    var initialUsername by mutableStateOf("")
         private set
 
-    var initialUsername by mutableStateOf("")
+    var initialWheelhotel by mutableStateOf<Wheelhotel?>(null)
         private set
 
     init {
         // TokenStore liest synchron -> keine Coroutine nötig.
-        // WICHTIG: nicht nur auf den (nach ~1 h ablaufenden) Access-Token schauen,
-        // sondern auch auf den Refresh-Token. Sonst würde nach etwas Leerlauf die
-        // eigentlich noch erneuerbare Session verworfen (RH/Benutzer "fliegen raus").
-        // Den abgelaufenen Access-Token erneuert der TokenAuthenticator still.
-        if (authRepository.hasSession()) {
+        // Abgelaufener Access-Token allein ist kein Grund für einen Re-Login: mit
+        // Refresh-Token erneuert der TokenAuthenticator still beim ersten Request.
+        if (authRepository.canResumeSession()) {
             val lastWH = authRepository.getLastWheelhotel()
+            initialUsername   = authRepository.username ?: ""
             initialWheelhotel = lastWH
-            initialUsername = authRepository.username ?: ""
-            startDestination = if (lastWH != null) Routes.RADWECHSEL else Routes.RH_AUSWAHL
+            // Ohne gemerktes Räderhotel (z.B. Absturz direkt nach dem Login) erst
+            // auswählen lassen – sonst ginge ein Radwechsel ohne Wheelhotel raus.
+            startDestination  = if (lastWH != null) Routes.RADWECHSEL else Routes.RH_AUSWAHL
         } else {
+            val savedUsername = authRepository.username
+            if (!savedUsername.isNullOrBlank()) {
+                authRepository.markSessionExpired()
+            }
             startDestination = Routes.LOGIN
         }
     }

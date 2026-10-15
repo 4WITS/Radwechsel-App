@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Barcode-Symbol für die Scan-Felder.
+
+  Material Icons liefert nur QrCodeScanner und DocumentScanner – ein Barcode
+  fehlt dort. Gescannt werden aber 1D-Barcodes, deshalb dieses eigene Symbol.
+  Einfarbig; die Farbe setzt Compose über Icon(tint = …). Ein android:tint steht
+  hier bewusst nicht: das App-Theme ist kein AppCompat-Theme und kennt
+  ?attr/colorControlNormal nicht.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M2,3h1.5v18h-1.5z M4.5,3h1v18h-1z M6.5,3h2v18h-2z M9.5,3h1v18h-1z M11.5,3h1.5v18h-1.5z M14,3h1v18h-1z M16,3h2v18h-2z M19,3h1v18h-1z M20.5,3h1.5v18h-1.5z" />
+</vector>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Managed Configuration: Werte, die die Geräteverwaltung (Scalefusion ist auf den
+  Geräten Device Owner) an diese App durchreichen kann.
+
+  Der Gerätename aus Scalefusion steht nirgends auf dem Gerät – der Android-Name
+  ist bei den SL20 schlicht "M3SL20". Über diesen Weg kann die IT ihn einmal je
+  App hinterlegen, sinnvollerweise mit dem Platzhalter für den Gerätenamen,
+  damit er sich nicht pro Gerät pflegen lässt.
+-->
+<restrictions xmlns:android="http://schemas.android.com/apk/res/android">
+    <restriction
+        android:key="device_name"
+        android:title="@string/restriction_device_name_title"
+        android:description="@string/restriction_device_name_description"
+        android:restrictionType="string"
+        android:defaultValue="" />
+</restrictions>

@@ -1,6 +1,8 @@
 package com.fourwheels.radwechsel.ui.radwechsel
 
-import androidx.compose.animation.AnimatedVisibility
+import android.content.Intent
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -27,8 +29,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -38,10 +42,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.fourwheels.radwechsel.R
 import com.fourwheels.radwechsel.export.ReportSharer
 import com.fourwheels.radwechsel.model.Wheelhotel
-import kotlinx.coroutines.delay
 import com.fourwheels.radwechsel.session.CompletedRadwechsel
+import com.fourwheels.radwechsel.ui.AppTopBar
+import com.fourwheels.radwechsel.ui.QueueAction
 import com.fourwheels.radwechsel.ui.login.Red4Wheels
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,33 +56,33 @@ fun RadwechselScreen(
     wheelhotel: Wheelhotel?,
     username: String = "",
     onLoggedOut: () -> Unit,
+    onSessionExpired: () -> Unit,
     viewModel: RadwechselViewModel = hiltViewModel()
 ) {
     LaunchedEffect(wheelhotel) { viewModel.wheelhotel = wheelhotel }
     LaunchedEffect(username) { viewModel.username = username }
 
-    // Session-Wächter: Ist der Token endgültig abgelaufen (Refresh nicht mehr möglich),
-    // den Nutzer sauber zur Anmeldung schicken – niemals mit leerem Header hängenbleiben.
-    LaunchedEffect(Unit) {
-        while (true) {
-            if (!viewModel.sessionAlive()) {
-                onLoggedOut()
-                break
-            }
-            delay(20_000)
-        }
-    }
+    // Nur solange dieser Screen sichtbar ist
+    LaunchedEffect(Unit) { viewModel.scans.collect(viewModel::onScan) }
 
     val context = LocalContext.current
     val state = viewModel.uiState
     val failedItems by viewModel.failedItems.collectAsState()
     val pendingItems by viewModel.pendingItems.collectAsState()
     val sessionItems by viewModel.sessionItems.collectAsState()
+    val sessionExpired by viewModel.sessionExpired.collectAsState()
     val hasOpenData = pendingItems.isNotEmpty() || failedItems.isNotEmpty()
+    val running = state.phase == RadwechselPhase.LAUFEND
 
     var showQueue by remember { mutableStateOf(false) }
     var showSession by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = showQueue || showSession) {
+        showQueue = false
+        showSession = false
+    }
 
     if (showLogoutConfirm) {
         AlertDialog(
@@ -99,20 +105,12 @@ fun RadwechselScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("Radwechsel", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Color.White)
-                        Text(
-                            "RH: ${wheelhotel?.id ?: "–"}  ·  ${username.uppercase()}",
-                            fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.75f)
-                        )
-                    }
-                },
+            AppTopBar(
+                username = username,
+                wheelhotel = wheelhotel,
                 actions = {
                     // Session-Liste (erledigte Radwechsel zum Gegencheck)
-                    if (state.phase != RadwechselPhase.LAUFEND) {
+                    if (!running) {
                         BadgedBox(badge = {
                             if (sessionItems.isNotEmpty()) {
                                 Badge(containerColor = Color.White, contentColor = Red4Wheels) {
@@ -135,54 +133,54 @@ fun RadwechselScreen(
                             }
                         }
                     }
-                    // Fehlgeschlagen-Badge
-                    if (failedItems.isNotEmpty()) {
-                        BadgedBox(badge = {
-                            Badge(containerColor = Color.White, contentColor = Red4Wheels) {
-                                Text("${failedItems.size}")
-                            }
-                        }) {
-                            IconButton(
-                                onClick = { showQueue = !showQueue; if (showQueue) showSession = false },
-                                modifier = Modifier.focusProperties { canFocus = false }
-                            ) {
-                                Icon(
-                                    Icons.Outlined.Sync,
-                                    contentDescription = "Fehlgeschlagene Übertragungen",
-                                    tint = Color.White
-                                )
-                            }
-                        }
-                    } else if (pendingItems.isNotEmpty()) {
+                    // Warteschlange: fehlgeschlagene Übertragungen sollen immer
+                    // auffallen, nicht erst beim nächsten Radwechsel.
+                    QueueAction(pendingItems.size, failedItems.size) {
+                        showQueue = !showQueue
+                        if (showQueue) showSession = false
+                    }
+                    // Protokoll und Logout braucht man selten – im Menü lassen sie
+                    // der Kopfzeile Platz, und der Logout passiert nicht versehentlich.
+                    Box {
                         IconButton(
-                            onClick = { showQueue = !showQueue; if (showQueue) showSession = false },
+                            onClick = { showMenu = true },
                             modifier = Modifier.focusProperties { canFocus = false }
                         ) {
-                            Icon(
-                                Icons.Outlined.Sync,
-                                contentDescription = "Ausstehende Übertragungen",
-                                tint = Color.White.copy(alpha = 0.6f)
+                            Icon(Icons.Outlined.MoreVert, contentDescription = "Menü")
+                        }
+                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Protokoll an IT senden") },
+                                leadingIcon = { Icon(painterResource(R.drawable.ic_log), contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    val intent = viewModel.buildLogMailIntent()
+                                    if (intent == null) {
+                                        Toast.makeText(context, "Protokoll konnte nicht erstellt werden", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        // Ohne Chooser landet man je nach Gerät stumm in einer
+                                        // App, die keine Anhänge kann.
+                                        runCatching { context.startActivity(Intent.createChooser(intent, "Protokoll senden")) }
+                                            .onFailure {
+                                                Toast.makeText(context, "Kein Mail-Programm gefunden", Toast.LENGTH_LONG).show()
+                                            }
+                                    }
+                                }
+                            )
+                            // Während eines laufenden Radwechsels gesperrt – der ginge sonst verloren
+                            DropdownMenuItem(
+                                text = { Text("Ausloggen") },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null) },
+                                enabled = !running,
+                                onClick = {
+                                    showMenu = false
+                                    if (hasOpenData) showLogoutConfirm = true
+                                    else viewModel.logout(lockUsername = false, onLoggedOut)
+                                }
                             )
                         }
                     }
-                    // Logout-Button
-                    if (state.phase != RadwechselPhase.LAUFEND) {
-                        IconButton(
-                            onClick = {
-                                if (hasOpenData) showLogoutConfirm = true
-                                else viewModel.logout(lockUsername = false, onLoggedOut)
-                            },
-                            modifier = Modifier.focusProperties { canFocus = false }
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Outlined.Logout,
-                                contentDescription = "Ausloggen",
-                                tint = if (hasOpenData) Color.White.copy(alpha = 0.35f) else Color.White
-                            )
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Red4Wheels)
+                }
             )
         }
     ) { padding ->
@@ -205,30 +203,61 @@ fun RadwechselScreen(
             QueueScreen(
                 failedItems = failedItems,
                 pendingItems = pendingItems,
-                onRetryAll = { viewModel.retryAll() },
-                onRetryItem = { viewModel.retryItem(it) },
+                onRetryAll = viewModel::retryAll,
+                onRetryItem = viewModel::retryItem,
                 onClose = { showQueue = false },
                 modifier = Modifier.padding(padding)
             )
         } else {
-            when (state.phase) {
-                RadwechselPhase.EINGABE -> EingabeScreen(
-                    state = state,
-                    viewModel = viewModel,
-                    modifier = Modifier.padding(padding)
-                )
-                RadwechselPhase.LAUFEND -> LaufendScreen(
-                    state = state,
-                    viewModel = viewModel,
-                    wheelhotel = wheelhotel,
-                    modifier = Modifier.padding(padding)
-                )
-                RadwechselPhase.ERFOLG -> ErfolgScreen(
-                    state = state,
-                    viewModel = viewModel,
-                    wheelhotel = wheelhotel,
-                    modifier = Modifier.padding(padding)
-                )
+            Column(Modifier.padding(padding).fillMaxSize()) {
+                if (sessionExpired) {
+                    // Bewusst kein automatischer Rauswurf: ein laufender Radwechsel
+                    // ginge verloren. Gespeichert wird weiter lokal, gesendet nach dem Login.
+                    SessionExpiredBanner(onRelogin = if (running) null else onSessionExpired)
+                }
+                when (state.phase) {
+                    RadwechselPhase.EINGABE -> EingabeScreen(
+                        state = state,
+                        viewModel = viewModel
+                    )
+                    RadwechselPhase.LAUFEND -> LaufendScreen(
+                        state = state,
+                        viewModel = viewModel,
+                        wheelhotel = wheelhotel
+                    )
+                    RadwechselPhase.ERFOLG -> ErfolgScreen(
+                        state = state,
+                        viewModel = viewModel,
+                        wheelhotel = wheelhotel
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Hinweis bei abgelaufener Sitzung. [onRelogin] null = mitten in einem Radwechsel,
+ * dann erst abschließen lassen statt ihn durch den Login zu verwerfen.
+ */
+@Composable
+private fun SessionExpiredBanner(onRelogin: (() -> Unit)?) {
+    Row(
+        Modifier.fillMaxWidth().background(Color(0xFFFEF3C7))
+            .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Sitzung abgelaufen", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF92400E))
+            Text(
+                if (onRelogin != null) "Radwechsel bleiben gespeichert und werden nach dem Anmelden gesendet."
+                else "Radwechsel abschließen, danach neu anmelden. Es geht nichts verloren.",
+                fontSize = 12.sp, color = Color(0xFF92400E)
+            )
+        }
+        if (onRelogin != null) {
+            TextButton(onClick = onRelogin) {
+                Text("Anmelden", color = Red4Wheels, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -313,7 +342,7 @@ private fun EingabeScreen(
         InputCard(
             label = "NEUE RADSATZNUMMER (OPTIONAL)",
             isFocused = radsatzFocused,
-            leadingIcon = Icons.Outlined.QrCodeScanner
+            leadingIcon = painterResource(R.drawable.ic_barcode)
         ) {
             BasicTextField(
                 value = state.radsatznummer,
@@ -618,7 +647,6 @@ private fun ErfolgScreen(
 
 // ── Queue-Ansicht ─────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun QueueScreen(
     failedItems: List<QueueItem>,
@@ -630,47 +658,44 @@ private fun QueueScreen(
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onClose) {
                 Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Zurück")
             }
             Text("Übertragungen", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
-            if (failedItems.isNotEmpty()) {
-                IconButton(onClick = onRetryAll) {
-                    Icon(Icons.Outlined.Sync, contentDescription = "Alle erneut senden", tint = Red4Wheels)
-                }
+        }
+        // Gilt für alles Offene: fehlgeschlagene kommen zurück in die Warteschlange,
+        // ausstehende gehen sofort raus statt erst beim nächsten Intervall.
+        val openCount = failedItems.size + pendingItems.size
+        if (openCount > 0) {
+            Button(
+                onClick = onRetryAll,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(48.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Red4Wheels),
+                shape = MaterialTheme.shapes.medium
+            ) {
+                Icon(Icons.Outlined.Sync, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Alle erneut senden ($openCount)", fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
         }
-
         LazyColumn(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             if (failedItems.isNotEmpty()) {
-                item {
-                    Text("FEHLGESCHLAGEN", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray, letterSpacing = 1.sp, modifier = Modifier.padding(vertical = 4.dp))
-                }
-                items(failedItems, key = { it.id }) { item ->
-                    QueueItemCard(item = item, isFailed = true, onRetry = { onRetryItem(item.id) })
-                }
+                item { QueueHeader("FEHLGESCHLAGEN") }
+                items(failedItems, key = { it.id }) { QueueItemCard(it, true) { onRetryItem(it.id) } }
             }
-
             if (pendingItems.isNotEmpty()) {
-                item {
-                    Text("AUSSTEHEND", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray, letterSpacing = 1.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
-                }
-                items(pendingItems, key = { it.id }) { item ->
-                    QueueItemCard(item = item, isFailed = false, onRetry = {})
-                }
+                item { QueueHeader("AUSSTEHEND") }
+                items(pendingItems, key = { it.id }) { QueueItemCard(it, false) {} }
             }
-
             if (failedItems.isEmpty() && pendingItems.isEmpty()) {
                 item {
-                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                         Text("Alle Daten übertragen ✓", color = Color(0xFF16A34A), fontWeight = FontWeight.SemiBold)
                     }
                 }
@@ -680,28 +705,32 @@ private fun QueueScreen(
 }
 
 @Composable
+private fun QueueHeader(text: String) {
+    Text(text, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray,
+        letterSpacing = 1.sp, modifier = Modifier.padding(vertical = 4.dp))
+}
+
+@Composable
 private fun QueueItemCard(item: QueueItem, isFailed: Boolean, onRetry: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isFailed) Color(0xFFFEF2F2) else Color(0xFFF9FAFB)
-        ),
+        colors = CardDefaults.cardColors(containerColor = if (isFailed) Color(0xFFFEF2F2) else Color(0xFFF9FAFB)),
         shape = MaterialTheme.shapes.medium
     ) {
-        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(item.licensePlate, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 15.sp)
-                Text("${item.wheelhotelName} · ${item.torque} Nm", fontSize = 12.sp, color = Color.Gray)
-                if (item.errorMessage != null) {
-                    Text(item.errorMessage, fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
-                }
+                Text("KST ${item.wheelhotelId ?: "–"} · ${item.torque} Nm", fontSize = 12.sp, color = Color.Gray)
+                Text(item.username?.uppercase() ?: "–", fontSize = 11.sp, color = Color.Gray)
+                item.errorMessage?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.error) }
             }
             if (isFailed) {
                 IconButton(onClick = onRetry) {
                     Icon(Icons.Outlined.Sync, contentDescription = "Erneut senden", tint = Red4Wheels)
                 }
             } else {
-                Icon(Icons.Outlined.CloudUpload, contentDescription = null, tint = Color.Gray, modifier = Modifier.padding(12.dp).size(20.dp))
+                Icon(Icons.Outlined.CloudUpload, contentDescription = null, tint = Color.Gray,
+                    modifier = Modifier.padding(12.dp).size(20.dp))
             }
         }
     }
@@ -807,7 +836,7 @@ private fun SessionItemCard(item: CompletedRadwechsel, timerText: String) {
 private fun InputCard(
     label: String,
     isFocused: Boolean,
-    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    leadingIcon: Painter? = null,
     content: @Composable () -> Unit
 ) {
     Column(

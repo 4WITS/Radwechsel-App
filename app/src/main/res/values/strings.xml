@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Radwechsel</string>
+
+    <!-- Beschriftung der Managed Configuration; sieht nur die IT in Scalefusion. -->
+    <string name="restriction_device_name_title">Gerätename</string>
+    <string name="restriction_device_name_description">Name des Geräts aus der Geräteverwaltung, z.B. MDE-IT-Test-0003 (HO). Erscheint im Diagnoseprotokoll.</string>
 </resources>

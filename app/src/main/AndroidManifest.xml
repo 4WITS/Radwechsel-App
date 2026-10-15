@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Rückmeldung nach Scan/Fehler (siehe ScanFeedback) -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Sichtbarkeit für den Report-Versand (Android 11+ Package Visibility) -->
     <queries>
@@ -17,15 +18,33 @@
     <application
         android:name=".RadwechselApplication"
         android:allowBackup="false"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Radwechsel">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.Radwechsel">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
 
-        <!-- Teilt die erzeugte Excel-Datei sicher (content://) an Outlook & Co. -->
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Erlaubt der Geräteverwaltung, Werte an die App zu übergeben
+             (siehe app_restrictions.xml und DeviceInfo). -->
+        <meta-data
+            android:name="android.content.APP_RESTRICTIONS"
+            android:resource="@xml/app_restrictions" />
+
+        <!-- Gibt Outlook/dem Mail-Programm Lesezugriff auf den Excel-Report und das
+             exportierte Protokoll (siehe ReportSharer, LogExporter). Nur die
+             Cache-Unterordner sind freigegeben. -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -35,18 +54,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
-
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:label="@string/app_name"
-            android:theme="@style/Theme.Radwechsel">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
     </application>
 
 </manifest>

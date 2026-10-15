@@ -6,6 +6,9 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.fourwheels.radwechsel.model.TokenResponse
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -68,11 +71,28 @@ class TokenStore @Inject constructor(
     val isTokenValid: Boolean
         get() = accessToken != null && System.currentTimeMillis() < tokenExpiry
 
+    /**
+     * Sitzung lässt sich ohne Passwort fortsetzen: entweder ist der Access-Token
+     * noch gültig oder ein Refresh-Token liegt vor, den der [TokenAuthenticator]
+     * beim ersten 401 still eintauscht.
+     */
+    val canResumeSession: Boolean
+        get() = isTokenValid || refreshToken != null
+
+    private val _sessionExpired = MutableStateFlow(false)
+
+    /**
+     * true, sobald der Refresh endgültig fehlgeschlagen ist. Die UI zeigt dann nur
+     * einen Hinweis statt den Nutzer mitten in einem Radwechsel rauszuwerfen.
+     */
+    val sessionExpired: StateFlow<Boolean> = _sessionExpired.asStateFlow()
+
     /** Login: Username + alle Token-Felder setzen, Sperre lösen. */
     fun saveLogin(username: String, token: TokenResponse) {
         this.username = username
         usernameLocked = false
         saveTokens(token)
+        _sessionExpired.value = false
     }
 
     /** Refresh: Access + Ablauf (und Refresh-Token nur, falls der Server einen neuen liefert). */
@@ -93,6 +113,7 @@ class TokenStore @Inject constructor(
             .remove(KEY_EXPIRY)
             .putBoolean(KEY_USERNAME_LOCKED, true)
             .apply()
+        _sessionExpired.value = true
     }
 
     /** Vollständiger Logout: alles weg. */

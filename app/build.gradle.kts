@@ -8,26 +8,37 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-// Signing-Zugangsdaten aus local.properties (nicht versioniert).
-// Fehlen sie, faellt der Release-Build auf den Debug-Key zurueck, statt zu brechen.
-val localProps = Properties().apply {
-    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+// Signing-Daten liegen in keystore.properties (gitignored, separat sichern).
+// Fehlt die Datei, laesst sich nur der Debug-Build erzeugen.
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
 }
-val releaseStoreFile = localProps.getProperty("RELEASE_STORE_FILE")
-    ?.let { rootProject.file(it) }
-    ?.takeIf { it.exists() }
+
+// Harte Bremse: ein Release-APK mit Debug-Key oder unsigniert waere via
+// Scalefusion nicht ueber die bestehende Installation installierbar
+// (INSTALL_FAILED_UPDATE_INCOMPATIBLE). Bewusst in der Konfigurationsphase
+// geprueft, ein doFirst-Lambda ist nicht configuration-cache-faehig.
+if (!keystorePropsFile.exists() &&
+    gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+) {
+    throw GradleException(
+        "keystore.properties fehlt - Release-Build nicht signierbar. " +
+            "Benoetigt: storeFile, storePassword, keyAlias, keyPassword."
+    )
+}
 
 android {
     namespace = "com.fourwheels.radwechsel"
     compileSdk = 35
 
     signingConfigs {
-        if (releaseStoreFile != null) {
+        if (keystorePropsFile.exists()) {
             create("release") {
-                storeFile = releaseStoreFile
-                storePassword = localProps.getProperty("RELEASE_STORE_PASSWORD")
-                keyAlias = localProps.getProperty("RELEASE_KEY_ALIAS")
-                keyPassword = localProps.getProperty("RELEASE_KEY_PASSWORD")
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
             }
         }
     }
@@ -38,7 +49,6 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -47,15 +57,15 @@ android {
             versionNameSuffix = "-test"
             buildConfigField("String", "AUTH_BASE_URL", "\"https://login-test.4wheels.de/\"")
             buildConfigField("String", "API_BASE_URL",  "\"https://api-test.4wheels.de/\"")
-            buildConfigField("String", "CLIENT_ID",     "\"iev2uogo6Viqueap\"")
+            buildConfigField("String", "CLIENT_ID",     "\"Wch8ngRe4dLpXq2z\"")
         }
         release {
             buildConfigField("String", "AUTH_BASE_URL", "\"https://login.4wheels.de/\"")
             buildConfigField("String", "API_BASE_URL",  "\"https://api.4wheels.de/\"")
-            buildConfigField("String", "CLIENT_ID",     "\"Xahceay4tahFee5j\"")
+            buildConfigField("String", "CLIENT_ID",     "\"XCVA1Q39eKj2g5UE\"")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
@@ -70,7 +80,7 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = true  // ← neu
+        buildConfig = true
     }
 }
 
@@ -109,8 +119,6 @@ dependencies {
     // ── Token-Speicher (verschlüsselt, synchron – für Auto-Refresh) ────────────
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
-    // ── Tests ─────────────────────────────────────────────────────────────────
+    // ── Tests (XlsxWriter) ────────────────────────────────────────────────────
     testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 }

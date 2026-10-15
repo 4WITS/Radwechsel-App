@@ -39,6 +39,10 @@ fun AppNavGraph(
     var selectedHotel    by remember { mutableStateOf(appViewModel.initialWheelhotel) }
     var selectedUsername by remember { mutableStateOf(appViewModel.initialUsername) }
 
+    val goToLogin: () -> Unit = {
+        navController.navigate(Routes.LOGIN) { popUpTo(0) { inclusive = true } }
+    }
+
     NavHost(navController = navController, startDestination = startDest) {
 
         composable(Routes.LOGIN) {
@@ -62,6 +66,7 @@ fun AppNavGraph(
 
         composable(Routes.RH_AUSWAHL) {
             RHAuswahlScreen(
+                username = selectedUsername,
                 onWheelhotelSelected = { hotel ->
                     selectedHotel = hotel
                     // Back-Stack leeren: von Radwechsel-Maske gibt es kein Zurück zur Auswahl
@@ -69,16 +74,8 @@ fun AppNavGraph(
                         popUpTo(0) { inclusive = true }
                     }
                 },
-                onLoggedOut = {
-                    navController.navigate(Routes.LOGIN) {
-                        popUpTo(0) { inclusive = true }
-                    }
-                },
-                onSessionExpired = {
-                    navController.navigate(Routes.LOGIN) {
-                        popUpTo(0) { inclusive = true }
-                    }
-                }
+                onLoggedOut = goToLogin,
+                onSessionExpired = goToLogin
             )
         }
 
@@ -86,11 +83,8 @@ fun AppNavGraph(
             RadwechselScreen(
                 wheelhotel = selectedHotel,
                 username   = selectedUsername,
-                onLoggedOut = {
-                    navController.navigate(Routes.LOGIN) {
-                        popUpTo(0) { inclusive = true }
-                    }
-                }
+                onLoggedOut = goToLogin,
+                onSessionExpired = goToLogin
             )
         }
     }

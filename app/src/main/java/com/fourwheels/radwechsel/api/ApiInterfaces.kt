@@ -51,8 +51,9 @@ interface FourWheelsApi {
     suspend fun getWheelhotels(): Response<List<Wheelhotel>>
 
     /**
-     * Endpunkt existiert noch nicht – Struktur abgestimmt auf WheelChangeRequest.
-     * Wird in der Offline-Queue gespeichert und gesendet sobald der Endpunkt live ist.
+     * Meldet einen abgeschlossenen Radwechsel. Body siehe [WheelChangeRequest].
+     * Läuft über die Offline-Queue (QueueManager) und wird gesendet, sobald
+     * Netz und Token vorhanden sind.
      */
     @POST("api/4wheels/wheel-change")
     suspend fun postWheelChange(

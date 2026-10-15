@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Icon-Größe im Launcher einstellen:
+      Der Vordergrund (das Motiv) sitzt auf einer 108dp-Fläche. Dieser Wert ist der
+      Rand rundum. GRÖSSERER Wert = KLEINERES Icon, kleinerer Wert = größeres Icon.
+      Gilt für Prod (rot) und Dev (blau) gleichzeitig.
+    -->
+    <dimen name="ic_launcher_inset">6dp</dimen>
+</resources>

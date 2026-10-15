@@ -5,6 +5,7 @@ import com.fourwheels.radwechsel.api.AuthApi
 import com.fourwheels.radwechsel.api.FourWheelsApi
 import com.fourwheels.radwechsel.auth.AuthInterceptor
 import com.fourwheels.radwechsel.auth.TokenAuthenticator
+import com.fourwheels.radwechsel.logging.HttpFileLogger
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -38,11 +39,12 @@ object NetworkModule {
      * wieder den Authenticator triggern -> Henne/Ei bzw. Endlosschleife.
      */
     @Provides @Singleton @Named("auth")
-    fun provideAuthClient(): OkHttpClient =
+    fun provideAuthClient(httpFileLogger: HttpFileLogger): OkHttpClient =
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .addInterceptor(logging())
+            .addInterceptor(httpFileLogger.interceptor)
             .build()
 
     /**
@@ -53,6 +55,7 @@ object NetworkModule {
     fun provideApiClient(
         authInterceptor: AuthInterceptor,
         tokenAuthenticator: TokenAuthenticator,
+        httpFileLogger: HttpFileLogger,
     ): OkHttpClient =
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -60,6 +63,7 @@ object NetworkModule {
             .addInterceptor(authInterceptor)
             .authenticator(tokenAuthenticator)
             .addInterceptor(logging())   // ganz zuletzt: sieht den echten Draht (inkl. Bearer)
+            .addInterceptor(httpFileLogger.interceptor)
             .build()
 
     @Provides @Singleton @Named("auth")
