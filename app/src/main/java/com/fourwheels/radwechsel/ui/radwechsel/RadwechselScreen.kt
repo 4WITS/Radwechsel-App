@@ -96,6 +96,24 @@ fun RadwechselScreen(
         viewModel.logout(lockUsername, onLoggedOut)
     }
 
+    // Vor dem Öffnen von Outlook zeigen, wo „Senden" ist – sonst wird die Mail
+    // einfach weggeklickt. null = kein Hinweis offen, sonst lockUsername für den Logout.
+    var outlookHintFor by remember { mutableStateOf<Boolean?>(null) }
+    val requestLogout = { lockUsername: Boolean ->
+        if (sessionItems.isNotEmpty()) outlookHintFor = lockUsername
+        else viewModel.logout(lockUsername, onLoggedOut)
+    }
+
+    outlookHintFor?.let { lockUsername ->
+        OutlookHintDialog(
+            onConfirm = {
+                outlookHintFor = null
+                logoutWithReport(lockUsername)
+            },
+            onDismiss = { outlookHintFor = null }
+        )
+    }
+
     BackHandler(enabled = showQueue || showSession) {
         showQueue = false
         showSession = false
@@ -109,7 +127,7 @@ fun RadwechselScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showLogoutConfirm = false
-                    logoutWithReport(true)
+                    requestLogout(true)
                 }) {
                     Text("Ausloggen", color = MaterialTheme.colorScheme.error)
                 }
@@ -180,7 +198,7 @@ fun RadwechselScreen(
                                 onClick = {
                                     showMenu = false
                                     if (hasOpenData) showLogoutConfirm = true
-                                    else logoutWithReport(false)
+                                    else requestLogout(false)
                                 }
                             )
                         }
@@ -233,6 +251,77 @@ fun RadwechselScreen(
             }
         }
     }
+}
+
+/**
+ * Hinweis vor dem Logout: gleich öffnet sich Outlook, oben rechts auf „Senden".
+ * Bewusst wenig Text und ein Bild der Outlook-Kopfzeile – nicht jeder liest
+ * gut Deutsch.
+ */
+@Composable
+private fun OutlookHintDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Outlined.Email, contentDescription = null, tint = Red4Wheels, modifier = Modifier.size(36.dp)) },
+        title = { Text("E-Mail senden!", fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center) },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    "Outlook öffnet sich.\nOben rechts auf SENDEN tippen.",
+                    fontSize = 17.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center
+                )
+                // Nachbau der Outlook-Kopfzeile, Senden-Symbol rot eingekreist
+                Column(horizontalAlignment = Alignment.End, modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(MaterialTheme.shapes.small)
+                            .background(Color(0xFFF3F4F6))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Outlined.Close, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.weight(1f))
+                        Box(
+                            Modifier
+                                .border(3.dp, Red4Wheels, MaterialTheme.shapes.extraLarge)
+                                .padding(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Send, contentDescription = "Senden",
+                                tint = Color(0xFF0F6CBD), modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+                    Icon(
+                        Icons.Outlined.ArrowUpward, contentDescription = null, tint = Red4Wheels,
+                        modifier = Modifier.padding(end = 14.dp).size(32.dp)
+                    )
+                }
+                Text(
+                    "Outlook opens – tap SEND (top right).",
+                    fontSize = 13.sp, color = Color.Gray, textAlign = TextAlign.Center
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = Red4Wheels),
+                modifier = Modifier.fillMaxWidth().height(52.dp)
+            ) {
+                Text("OK", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                Text("Abbrechen", color = Color.Gray)
+            }
+        }
+    )
 }
 
 /**
