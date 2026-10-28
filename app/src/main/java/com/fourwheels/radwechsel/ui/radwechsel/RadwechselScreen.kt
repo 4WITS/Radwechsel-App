@@ -80,6 +80,22 @@ fun RadwechselScreen(
     var showLogoutConfirm by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
 
+    // Excel-Report an Outlook übergeben. null-Payload = keine Radwechsel, dann passiert nichts.
+    val shareReport = {
+        viewModel.buildReportPayload()?.let { p ->
+            ReportSharer.shareToOutlook(
+                context, p.xlsx, p.fileName, p.recipient, p.subject, p.body
+            )
+        }
+    }
+
+    // Beim Ausloggen den Report automatisch mitschicken, solange das Session-Log
+    // noch gefüllt ist (Logout leert es). Outlook öffnet sich über dem Login.
+    val logoutWithReport = { lockUsername: Boolean ->
+        shareReport()
+        viewModel.logout(lockUsername, onLoggedOut)
+    }
+
     BackHandler(enabled = showQueue || showSession) {
         showQueue = false
         showSession = false
@@ -93,7 +109,7 @@ fun RadwechselScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showLogoutConfirm = false
-                    viewModel.logout(lockUsername = true, onLoggedOut)
+                    logoutWithReport(true)
                 }) {
                     Text("Ausloggen", color = MaterialTheme.colorScheme.error)
                 }
@@ -164,7 +180,7 @@ fun RadwechselScreen(
                                 onClick = {
                                     showMenu = false
                                     if (hasOpenData) showLogoutConfirm = true
-                                    else viewModel.logout(lockUsername = false, onLoggedOut)
+                                    else logoutWithReport(false)
                                 }
                             )
                         }
@@ -177,13 +193,7 @@ fun RadwechselScreen(
         if (showSession) {
             SessionScreen(
                 items = sessionItems,
-                onShare = {
-                    viewModel.buildReportPayload()?.let { p ->
-                        ReportSharer.shareToOutlook(
-                            context, p.xlsx, p.fileName, p.recipient, p.subject, p.body
-                        )
-                    }
-                },
+                onShare = { shareReport() },
                 viewModel = viewModel,
                 onClose = { showSession = false },
                 modifier = Modifier.padding(padding)
