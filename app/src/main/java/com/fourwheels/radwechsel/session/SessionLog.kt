@@ -20,6 +20,7 @@ data class CompletedRadwechsel(
     val id: String = UUID.randomUUID().toString(),
     val kennzeichen: String,
     val radsatznummer: String,
+    val alterRsMitgenommen: Boolean? = null,  // null = nicht angegeben (auch ältere Einträge)
     val torque: Int,
     val kostenstelle: String,   // ID des gewählten Räderhotels
     val standortName: String,   // Name des Standorts

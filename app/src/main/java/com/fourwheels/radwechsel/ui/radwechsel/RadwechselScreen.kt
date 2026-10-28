@@ -382,6 +382,20 @@ private fun EingabeScreen(
             )
         }
 
+        // Alter Radsatz: nur für Gegencheck/Excel, geht NICHT an die API
+        InputCard(label = "KUNDE NIMMT ALTEN RS MIT?", isFocused = false) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ChoiceButton("Ja", state.alterRsMitgenommen == true, Modifier.weight(1f)) {
+                    focusManager.clearFocus()
+                    viewModel.onAlterRsMitgenommenChange(true)
+                }
+                ChoiceButton("Nein", state.alterRsMitgenommen == false, Modifier.weight(1f)) {
+                    focusManager.clearFocus()
+                    viewModel.onAlterRsMitgenommenChange(false)
+                }
+            }
+        }
+
         if (state.error != null) {
             Text(
                 text = state.error,
@@ -605,6 +619,13 @@ private fun ErfolgScreen(
                     fontFamily = FontFamily.Monospace
                 )
             }
+            state.alterRsMitgenommen?.let {
+                Text(
+                    "Alter RS mitgenommen: ${if (it) "Ja" else "Nein"}",
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
+            }
             Text(
                 viewModel.formatTimer(state.timerSeconds),
                 fontSize = 14.sp,
@@ -820,6 +841,7 @@ private fun SessionItemCard(item: CompletedRadwechsel, timerText: String) {
                 Text(
                     buildString {
                         if (item.radsatznummer.isNotBlank()) append("Radsatz ${item.radsatznummer} · ")
+                        item.alterRsMitgenommen?.let { append("Alter RS mit: ${if (it) "Ja" else "Nein"} · ") }
                         append("${item.torque} Nm · $timerText")
                     },
                     fontSize = 12.sp, color = Color.Gray
@@ -862,6 +884,29 @@ private fun InputCard(
             Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6B7280), letterSpacing = 1.sp)
         }
         content()
+    }
+}
+
+@Composable
+private fun ChoiceButton(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    if (selected) {
+        Button(
+            onClick = onClick,
+            modifier = modifier.height(44.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Red4Wheels),
+            shape = MaterialTheme.shapes.medium
+        ) {
+            Text(text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        }
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = modifier.height(44.dp),
+            shape = MaterialTheme.shapes.medium,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF374151))
+        ) {
+            Text(text, fontSize = 15.sp)
+        }
     }
 }
 

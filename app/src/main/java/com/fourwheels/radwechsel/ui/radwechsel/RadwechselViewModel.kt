@@ -68,6 +68,8 @@ data class RadwechselUiState(
     val phase: RadwechselPhase = RadwechselPhase.EINGABE,
     val kennzeichen: String = "",
     val radsatznummer: String = "",
+    /** Nimmt der Kunde den alten Radsatz mit? Pflicht vor dem Start; null = noch nicht gewählt. */
+    val alterRsMitgenommen: Boolean? = null,
     val torque: String = "110",
     val timerSeconds: Int = 0,
     val startedAt: String = "",
@@ -196,6 +198,10 @@ class RadwechselViewModel @Inject constructor(
         if (match != null) radsatzScanCompleted = true
     }
 
+    fun onAlterRsMitgenommenChange(v: Boolean) {
+        update(uiState.copy(alterRsMitgenommen = v, error = null))
+    }
+
     fun onTorqueChange(v: String) {
         if (v.all { it.isDigit() } && v.length <= 4) {
             update(uiState.copy(torque = v, error = null))
@@ -208,6 +214,10 @@ class RadwechselViewModel @Inject constructor(
             return
         }
         // Radsatznummer ist optional – kein Zwang zum Scannen.
+        if (uiState.alterRsMitgenommen == null) {
+            fail("Bitte angeben, ob der Kunde den alten Radsatz mitnimmt")
+            return
+        }
 
         update(uiState.copy(
             phase = RadwechselPhase.LAUFEND,
@@ -278,6 +288,7 @@ class RadwechselViewModel @Inject constructor(
             CompletedRadwechsel(
                 kennzeichen    = uiState.kennzeichen,
                 radsatznummer  = uiState.radsatznummer,
+                alterRsMitgenommen = uiState.alterRsMitgenommen,
                 torque         = torqueInt,
                 kostenstelle   = hotel.id,
                 standortName   = hotel.displayName,
@@ -352,7 +363,7 @@ class RadwechselViewModel @Inject constructor(
     private fun buildReportXlsx(items: List<CompletedRadwechsel>): ByteArray {
         val headers = listOf(
             "Kostenstelle", "Standort", "Benutzer", "Kennzeichen / Auftragsnummer",
-            "Radsatznummer", "Drehmoment (Nm)", "Datum", "Von", "Bis"
+            "Radsatznummer", "Kunde nimmt alten RS mit", "Drehmoment (Nm)", "Datum", "Von", "Bis"
         )
         val rows = items.map {
             listOf(
@@ -361,6 +372,7 @@ class RadwechselViewModel @Inject constructor(
                 it.benutzer,
                 it.kennzeichen,
                 it.radsatznummer,
+                when (it.alterRsMitgenommen) { true -> "Ja"; false -> "Nein"; null -> "" },
                 it.torque.toString(),
                 formatDate(it.finishedAtIso),
                 formatTime(it.startedAtIso),
